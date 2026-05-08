@@ -22,7 +22,7 @@ import { generateWithWaveSpeed } from "./providers/wavespeed";
 // Re-export for backward compatibility (test file imports from route)
 export const clearFalInputMappingCache = _clearFalInputMappingCache;
 
-export const maxDuration = 600; // 10 minute timeout for video generation polling
+export const maxDuration = 300; // Hobby plan cap; longer jobs must use async task polling
 export const dynamic = 'force-dynamic'; // Ensure this route is always dynamic
 
 
