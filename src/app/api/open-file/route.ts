@@ -4,6 +4,7 @@ import { promisify } from "util";
 import { stat } from "fs/promises";
 import path from "path";
 import os from "os";
+import { isVercelEnvironment, unsupportedOnVercelResponse } from "@/utils/vercelEnvironment";
 
 const execFileAsync = promisify(execFile);
 
@@ -26,6 +27,10 @@ function isLocalhostRequest(req: NextRequest): boolean {
 }
 
 export async function POST(req: NextRequest) {
+    if (isVercelEnvironment()) {
+        return unsupportedOnVercelResponse("Revealing local files in the OS file manager");
+    }
+
     // Only allow requests from localhost
     if (!isLocalhostRequest(req)) {
         return NextResponse.json(

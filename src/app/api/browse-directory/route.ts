@@ -4,6 +4,7 @@ import { promisify } from "util";
 import { writeFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
+import { isVercelEnvironment, unsupportedOnVercelResponse } from "@/utils/vercelEnvironment";
 
 const execAsync = promisify(exec);
 
@@ -36,6 +37,10 @@ export function normalizeSelectedPath(selectedPath: string, platform: string): s
 
 // GET: Open native directory picker and return the selected path
 export async function GET() {
+  if (isVercelEnvironment()) {
+    return unsupportedOnVercelResponse("Opening the native folder picker");
+  }
+
   const platform = process.platform;
 
   try {

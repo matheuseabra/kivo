@@ -3,6 +3,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { logger } from "@/utils/logger";
 import { validateWorkflowPath } from "@/utils/pathValidation";
+import { isVercelEnvironment, unsupportedOnVercelResponse } from "@/utils/vercelEnvironment";
 
 export const maxDuration = 300; // 5 minute timeout for large image operations
 
@@ -29,6 +30,10 @@ function getMimeAndExtension(dataUrl: string): { mime: string; extension: string
 
 // POST: Save an image to the workflow's inputs or generations folder
 export async function POST(request: NextRequest) {
+  if (isVercelEnvironment()) {
+    return unsupportedOnVercelResponse("Saving workflow images to the local filesystem");
+  }
+
   let workflowPath: string | undefined;
   let imageId: string | undefined;
   let folder: string | undefined;
@@ -185,6 +190,10 @@ export async function POST(request: NextRequest) {
 
 // GET: Load an image from the workflow's folders (inputs, generations, or legacy .images)
 export async function GET(request: NextRequest) {
+  if (isVercelEnvironment()) {
+    return unsupportedOnVercelResponse("Loading workflow images from the local filesystem");
+  }
+
   const workflowPath = request.nextUrl.searchParams.get("workflowPath");
   const imageId = request.nextUrl.searchParams.get("imageId");
   const folder = request.nextUrl.searchParams.get("folder"); // Optional hint for which folder to check first

@@ -3,6 +3,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import * as crypto from "crypto";
 import { logger } from "@/utils/logger";
+import { isVercelEnvironment, unsupportedOnVercelResponse } from "@/utils/vercelEnvironment";
 
 export const maxDuration = 300; // 5 minute timeout for large media operations
 
@@ -101,6 +102,10 @@ async function findExistingFileByHash(
 
 // POST: Save a generated image or video to the generations folder (or outputs folder)
 export async function POST(request: NextRequest) {
+  if (isVercelEnvironment()) {
+    return unsupportedOnVercelResponse("Saving generated media to the local filesystem");
+  }
+
   let directoryPath: string | undefined;
   try {
     const body = await request.json();
