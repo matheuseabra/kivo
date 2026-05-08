@@ -17,6 +17,7 @@ export type ModelCapability =
   | "text-to-video"
   | "image-to-video"
   | "text-to-3d"
+  | "video-to-video"
   | "image-to-3d"
   | "text-to-audio"
   | "audio-to-video";

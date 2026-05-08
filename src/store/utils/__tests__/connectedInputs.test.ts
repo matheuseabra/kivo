@@ -78,6 +78,42 @@ describe("getConnectedInputsPure", () => {
     expect(result.videos).toEqual(["data:video/mp4;base64,vid"]);
   });
 
+  it("should map schema video handles into dynamicInputs for motion-control models", () => {
+    const nodes = [
+      makeNode("img", "imageInput", { image: "data:image/png;base64,abc" }),
+      makeNode("vid", "videoInput", { video: "data:video/mp4;base64,xyz" }),
+      makeNode("gen", "generateVideo", {
+        inputSchema: [
+          { name: "input_urls", type: "image" },
+          { name: "video_urls", type: "video" },
+        ],
+      }),
+    ];
+    const edges = [
+      {
+        id: "img-gen",
+        source: "img",
+        target: "gen",
+        sourceHandle: "image",
+        targetHandle: "image",
+      },
+      {
+        id: "vid-gen",
+        source: "vid",
+        target: "gen",
+        sourceHandle: "video",
+        targetHandle: "video",
+      },
+    ] as WorkflowEdge[];
+
+    const result = getConnectedInputsPure("gen", nodes, edges);
+    expect(result.dynamicInputs).toEqual({
+      input_urls: "data:image/png;base64,abc",
+      video_urls: "data:video/mp4;base64,xyz",
+    });
+    expect(result.videos).toEqual(["data:video/mp4;base64,xyz"]);
+  });
+
   it("should extract text from llmGenerate source", () => {
     const nodes = [
       makeNode("llm", "llmGenerate", { outputText: "generated text" }),

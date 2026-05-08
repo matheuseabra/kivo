@@ -105,6 +105,14 @@ const sampleModels: ProviderModel[] = [
     coverImage: "https://example.com/kling.jpg",
   },
   {
+    id: "fal-ai/kling-video/v2.6/standard/motion-control",
+    name: "Kling Motion Control",
+    description: "Motion transfer video generation",
+    provider: "kie",
+    capabilities: ["video-to-video"],
+    coverImage: "https://example.com/kling-motion.jpg",
+  },
+  {
     id: "fal-ai/triposr",
     name: "TripoSR",
     description: "3D model generation from images",
@@ -335,7 +343,7 @@ describe("ModelSearchDialog", () => {
         expect(mockFetch).toHaveBeenCalled();
         const fetchCall = mockFetch.mock.calls[0][0] as string;
         // URL encodes comma as %2C
-        expect(fetchCall).toMatch(/capabilities=text-to-video[,%].*image-to-video/);
+        expect(fetchCall).toMatch(/capabilities=text-to-video[,%].*image-to-video[,%].*video-to-video/);
       });
     });
 
@@ -350,7 +358,7 @@ describe("ModelSearchDialog", () => {
         expect(mockFetch).toHaveBeenCalled();
         const fetchCall = mockFetch.mock.calls[0][0] as string;
         // URL encodes comma as %2C
-        expect(fetchCall).toMatch(/capabilities=text-to-video[,%].*image-to-video/);
+        expect(fetchCall).toMatch(/capabilities=text-to-video[,%].*image-to-video[,%].*video-to-video/);
       });
     });
   });
@@ -420,7 +428,7 @@ describe("ModelSearchDialog", () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText(/4 models? found/)).toBeInTheDocument();
+        expect(screen.getByText(/5 models? found/)).toBeInTheDocument();
       });
     });
   });
@@ -516,6 +524,36 @@ describe("ModelSearchDialog", () => {
             modelId: "kling-video/v1.6/pro",
             displayName: "Kling Video Pro",
             capabilities: ["text-to-video", "image-to-video"],
+          },
+        })
+      );
+    });
+
+    it("should create generateVideo node for video-to-video models", async () => {
+      const onClose = vi.fn();
+
+      render(
+        <TestWrapper>
+          <ModelSearchDialog isOpen={true} onClose={onClose} />
+        </TestWrapper>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText("Kling Motion Control")).toBeInTheDocument();
+      });
+
+      const modelCard = screen.getByText("Kling Motion Control").closest("button");
+      fireEvent.click(modelCard!);
+
+      expect(mockAddNode).toHaveBeenCalledWith(
+        "generateVideo",
+        expect.any(Object),
+        expect.objectContaining({
+          selectedModel: {
+            provider: "kie",
+            modelId: "fal-ai/kling-video/v2.6/standard/motion-control",
+            displayName: "Kling Motion Control",
+            capabilities: ["video-to-video"],
           },
         })
       );

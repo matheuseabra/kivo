@@ -11,12 +11,23 @@ import { validateMediaUrl } from "@/utils/urlValidation";
 const MAX_MEDIA_SIZE = 500 * 1024 * 1024; // 500MB
 const MAX_UPLOAD_SIZE = 20 * 1024 * 1024; // 20MB
 
+function normalizeKieModelId(modelId: string): string {
+  switch (modelId) {
+    case "fal-ai/kling-video/v2.6/standard/motion-control":
+      return "kling-2.6/motion-control";
+    case "fal-ai/kling-video/v3.0/standard/motion-control":
+      return "kling-3.0/motion-control";
+    default:
+      return modelId;
+  }
+}
+
 /**
  * Get default required parameters for a Kie model
  * Many Kie models require specific parameters to be present even if not user-specified
  */
 export function getKieModelDefaults(modelId: string): Record<string, unknown> {
-  switch (modelId) {
+  switch (normalizeKieModelId(modelId)) {
     // GPT Image models
     case "gpt-image/1.5-text-to-image":
     case "gpt-image/1.5-image-to-image":
@@ -234,6 +245,7 @@ export function getKieModelDefaults(modelId: string): Record<string, unknown> {
  * Get the correct image input parameter name for a Kie model
  */
 export function getKieImageInputKey(modelId: string): string {
+  modelId = normalizeKieModelId(modelId);
   // Model-specific parameter names
   if (modelId === "nano-banana-2") return "image_input";
   if (modelId === "nano-banana-pro") return "image_input";
@@ -495,6 +507,7 @@ export async function pollKieTaskCompletion(
 // Map internal model IDs to the API model value expected by Kie
 // Seedance models use a base ID without the capability suffix
 function getKieApiModelId(modelId: string): string {
+  modelId = normalizeKieModelId(modelId);
   if (modelId.startsWith("bytedance/seedance-2/")) return "bytedance/seedance-2";
   if (modelId.startsWith("bytedance/seedance-2-fast/")) return "bytedance/seedance-2-fast";
   return modelId;

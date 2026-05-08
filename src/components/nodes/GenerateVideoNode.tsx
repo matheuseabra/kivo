@@ -23,7 +23,7 @@ import { useShowHandleLabels } from "@/hooks/useShowHandleLabels";
 import { HandleLabel } from "./HandleLabel";
 
 // Video generation capabilities
-const VIDEO_CAPABILITIES: ModelCapability[] = ["text-to-video", "image-to-video", "audio-to-video"];
+const VIDEO_CAPABILITIES: ModelCapability[] = ["text-to-video", "image-to-video", "video-to-video", "audio-to-video"];
 
 /** Returns true for Gemini-native Veo video models */
 function isVeoModel(modelId: string | undefined): boolean {
@@ -44,6 +44,18 @@ function buildVeoInputSchema(modelId: string): ModelInputDef[] | undefined {
   }
   return inputs;
 }
+
+function isMotionControlModel(modelId: string | undefined): boolean {
+  if (!modelId) return false;
+  return modelId.includes("motion-control");
+}
+
+const MOTION_CONTROL_FALLBACK_MODEL_IDS = new Set([
+  "kling-2.6/motion-control",
+  "fal-ai/kling-video/v2.6/standard/motion-control",
+  "kling-3.0/motion-control",
+  "fal-ai/kling-video/v3.0/standard/motion-control",
+]);
 
 type GenerateVideoNodeType = Node<GenerateVideoNodeData, "generateVideo">;
 
@@ -80,6 +92,7 @@ export function GenerateVideoNode({ id, data, selected }: NodeProps<GenerateVide
   }, [id]);
 
   const currentProvider: ProviderType = nodeData.selectedModel?.provider || "fal";
+  const usesMotionControlLayout = isMotionControlModel(nodeData.selectedModel?.modelId);
 
   // Get enabled providers
   const enabledProviders = useMemo(() => {
@@ -229,8 +242,7 @@ export function GenerateVideoNode({ id, data, selected }: NodeProps<GenerateVide
     const modelId = nodeData.selectedModel?.modelId;
     if (!modelId) return;
 
-    const klingFalId = "fal-ai/kling-video/v2.6/standard/motion-control";
-    if (modelId === klingFalId) {
+    if (MOTION_CONTROL_FALLBACK_MODEL_IDS.has(modelId)) {
       const hasVideo = (nodeData.inputSchema || []).some((i) => i.type === "video");
       if (!hasVideo) {
         const fallbackInputs: ModelInputDef[] = [
@@ -573,39 +585,68 @@ export function GenerateVideoNode({ id, data, selected }: NodeProps<GenerateVide
             });
           }
 
-          // Calculate positions: group by type order (image, video, audio, text) with gaps between groups
-          const imageHandles = handles.filter(h => h.type === "image");
-          const videoHandles = handles.filter(h => h.type === "video");
-          const audioHandles = handles.filter(h => h.type === "audio");
-          const textHandles = handles.filter(h => h.type === "text");
-          const groupCount = [imageHandles.length > 0, videoHandles.length > 0, audioHandles.length > 0, textHandles.length > 0].filter(Boolean).length;
-          const totalSlots = imageHandles.length + videoHandles.length + audioHandles.length + textHandles.length + (groupCount - 1); // gaps between groups
-
           const getHandleColor = (type: string) => {
+            if (type === "video" && usesMotionControlLayout) return "var(--handle-color-motion-video)";
             if (type === "image") return "var(--handle-color-image)";
             if (type === "audio") return "var(--handle-color-audio)";
             if (type === "video") return "var(--handle-color-video)";
             return "var(--handle-color-text)";
           };
 
-          const renderedHandles = handles.map((handle) => {
-            // Calculate position based on type group ordering
-            let adjustedIndex: number;
-            if (handle.type === "image") {
-              adjustedIndex = imageHandles.findIndex(h => h.id === handle.id);
-            } else if (handle.type === "video") {
-              const gapAfterImages = imageHandles.length > 0 ? 1 : 0;
-              adjustedIndex = imageHandles.length + gapAfterImages + videoHandles.findIndex(h => h.id === handle.id);
-            } else if (handle.type === "audio") {
-              const gapAfterImages = imageHandles.length > 0 ? 1 : 0;
-              const gapAfterVideo = videoHandles.length > 0 ? 1 : 0;
-              adjustedIndex = imageHandles.length + gapAfterImages + videoHandles.length + gapAfterVideo + audioHandles.findIndex(h => h.id === handle.id);
-            } else {
-              const gapAfterImages = imageHandles.length > 0 && (videoHandles.length > 0 || audioHandles.length > 0 || textHandles.length > 0) ? 1 : 0;
-              const gapAfterVideo = videoHandles.length > 0 && (audioHandles.length > 0 || textHandles.length > 0) ? 1 : 0;
-              const gapAfterAudio = audioHandles.length > 0 && textHandles.length > 0 ? 1 : 0;
-              adjustedIndex = imageHandles.length + gapAfterImages + videoHandles.length + gapAfterVideo + audioHandles.length + gapAfterAudio + textHandles.findIndex(h => h.id === handle.id);
+          const groupOrder: Array<"image" | "video" | "audio" | "text"> = usesMotionControlLayout
+            ? ["text", "image", "video", "audio"]
+            : ["image", "video", "audio", "text"];
+
+          const handleGroups = groupOrder
+            .map((type) => ({
+              type,
+              items: handles.filter((handle) => handle.type === type),
+            }))
+            .filter((group) => group.items.length > 0);
+
+          const totalSlots =
+            handleGroups.reduce((sum, group) => sum + group.items.length, 0) +
+            (handleGroups.length - 1);
+
+          const getAdjustedIndex = (handle: typeof handles[number]) => {
+            let offset = 0;
+
+            for (let groupIndex = 0; groupIndex < handleGroups.length; groupIndex += 1) {
+              const group = handleGroups[groupIndex];
+              if (group.type === handle.type) {
+                const indexWithinGroup = group.items.findIndex((item) => item.id === handle.id);
+                return offset + Math.max(indexWithinGroup, 0);
+              }
+
+              offset += group.items.length;
+              if (groupIndex < handleGroups.length - 1) {
+                offset += 1;
+              }
             }
+
+            return offset;
+          };
+
+          const getHandleStyle = (handle: typeof handles[number], topPercent: number) => {
+            const baseStyle = {
+              top: `${topPercent}%`,
+              opacity: handle.isPlaceholder ? 0.3 : 1,
+              zIndex: 10,
+            };
+
+            if (handle.type === "video" && usesMotionControlLayout) {
+              return {
+                ...baseStyle,
+                background: "var(--handle-color-motion-video)",
+                boxShadow: "0 0 0 2px rgba(249, 115, 22, 0.16), 0 0 12px rgba(249, 115, 22, 0.5)",
+              };
+            }
+
+            return baseStyle;
+          };
+
+          const renderedHandles = handles.map((handle) => {
+            const adjustedIndex = getAdjustedIndex(handle);
             const topPercent = ((adjustedIndex + 1) / (totalSlots + 1)) * 100;
 
             return (
@@ -614,11 +655,7 @@ export function GenerateVideoNode({ id, data, selected }: NodeProps<GenerateVide
                   type="target"
                   position={Position.Left}
                   id={handle.id}
-                  style={{
-                    top: `${topPercent}%`,
-                    opacity: handle.isPlaceholder ? 0.3 : 1,
-                    zIndex: 10,
-                  }}
+                  style={getHandleStyle(handle, topPercent)}
                   data-handletype={handle.type}
                   data-schema-name={handle.schemaName || undefined}
                   isConnectable={true}
@@ -694,10 +731,21 @@ export function GenerateVideoNode({ id, data, selected }: NodeProps<GenerateVide
         position={Position.Right}
         id="video"
         data-handletype="video"
-        style={{ zIndex: 10 }}
+        style={usesMotionControlLayout
+          ? {
+              zIndex: 10,
+              background: "var(--handle-color-motion-video)",
+              boxShadow: "0 0 0 2px rgba(249, 115, 22, 0.16), 0 0 12px rgba(249, 115, 22, 0.5)",
+            }
+          : { zIndex: 10 }}
       />
       {/* Output label */}
-      <HandleLabel label="Video" side="source" color="var(--handle-color-video)" visible={showLabels} />
+      <HandleLabel
+        label="Video"
+        side="source"
+        color={usesMotionControlLayout ? "var(--handle-color-motion-video)" : "var(--handle-color-video)"}
+        visible={showLabels}
+      />
 
       <div className="relative w-full h-full min-h-0 overflow-hidden rounded-lg">
         {/* Preview area */}

@@ -196,8 +196,8 @@ describe("/api/models route", () => {
       expect(data.providers.fal).toBeUndefined();
     });
 
-    it("GET: should return hardcoded fal models for provider=fal without a FAL key", async () => {
-      const request = createMockGetRequest({ provider: "fal", capabilities: "image-to-video" });
+    it("GET: should return hardcoded fal video-to-video models for provider=fal without a FAL key", async () => {
+      const request = createMockGetRequest({ provider: "fal", capabilities: "video-to-video" });
       const response = await GET(request);
       const data = await response.json();
 

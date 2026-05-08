@@ -461,6 +461,37 @@ describe("GenerateVideoNode", () => {
       expect(textHandle).toBeInTheDocument();
     });
 
+    it("should use motion-control handle ordering with orange video accents", () => {
+      const { container } = render(
+        <TestWrapper>
+          <GenerateVideoNode {...createNodeProps({
+            selectedModel: { provider: "fal", modelId: "fal-ai/kling-video/v2.6/standard/motion-control", displayName: "Kling V2.6 Std Motion Control" },
+            inputSchema: [
+              { name: "prompt", type: "text", required: false, label: "Text" },
+              { name: "input_urls", type: "image", required: true, label: "Image" },
+              { name: "video_urls", type: "video", required: true, label: "Video" },
+            ],
+          })} />
+        </TestWrapper>
+      );
+
+      const textHandle = container.querySelector('[data-schema-name="prompt"]') as HTMLElement;
+      const imageHandle = container.querySelector('[data-schema-name="input_urls"]') as HTMLElement;
+      const videoHandle = container.querySelector('[data-schema-name="video_urls"]') as HTMLElement;
+      const outputHandle = container.querySelector('[data-handletype="video"][class*="source"]') as HTMLElement;
+
+      expect(textHandle).toBeInTheDocument();
+      expect(imageHandle).toBeInTheDocument();
+      expect(videoHandle).toBeInTheDocument();
+      expect(outputHandle).toBeInTheDocument();
+
+      expect(parseFloat(textHandle.style.top)).toBeLessThan(parseFloat(imageHandle.style.top));
+      expect(parseFloat(imageHandle.style.top)).toBeLessThan(parseFloat(videoHandle.style.top));
+
+      expect(videoHandle).toHaveStyle({ background: "var(--handle-color-motion-video)" });
+      expect(outputHandle).toHaveStyle({ background: "var(--handle-color-motion-video)" });
+    });
+
     it("should show placeholder handles when schema lacks image or text inputs", () => {
       const { container } = render(
         <TestWrapper>

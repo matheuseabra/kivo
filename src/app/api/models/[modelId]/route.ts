@@ -1018,6 +1018,18 @@ function getKieSchema(modelId: string): ExtractedSchema {
         { name: "video_urls", type: "video", required: true, label: "Video", isArray: true },
       ],
     },
+    "fal-ai/kling-video/v3.0/standard/motion-control": {
+      parameters: [
+        { name: "mode", type: "string", description: "Output resolution", enum: ["720p", "1080p"], default: "720p" },
+        { name: "character_orientation", type: "string", description: "Character orientation source", enum: ["image", "video"], default: "video" },
+        { name: "background_source", type: "string", description: "Background source", enum: ["input_video", "input_image"], default: "input_video" },
+      ],
+      inputs: [
+        { name: "prompt", type: "text", required: false, label: "Prompt" },
+        { name: "input_urls", type: "image", required: true, label: "Image", isArray: true },
+        { name: "video_urls", type: "video", required: true, label: "Video", isArray: true },
+      ],
+    },
     "kling/v2-5-turbo-text-to-video-pro": {
       parameters: [
         { name: "aspect_ratio", type: "string", description: "Output aspect ratio", enum: ["16:9", "9:16", "1:1"], default: "16:9" },
