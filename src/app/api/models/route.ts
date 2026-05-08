@@ -500,6 +500,10 @@ const KIE_MODELS: ProviderModel[] = [
   },
 ];
 
+const HARDCODED_FAL_MODELS = KIE_MODELS.filter(
+  (model) => model.provider === "fal"
+);
+
 // Gemini image models (hardcoded - these don't come from an external API)
 const GEMINI_IMAGE_MODELS: ProviderModel[] = [
   {
@@ -1101,7 +1105,7 @@ export async function GET(
 
   // Build list of all available providers (have keys from env or client headers)
   const availableProviders: string[] = ["gemini", "kie"]; // Gemini and Kie hardcoded models are available for listing
-  if (falKey) availableProviders.push("fal");
+  if (HARDCODED_FAL_MODELS.length > 0 || falKey) availableProviders.push("fal");
   if (replicateKey) availableProviders.push("replicate");
   if (kieKey) availableProviders.push("kie");
   if (wavespeedKey) availableProviders.push("wavespeed");
@@ -1110,6 +1114,7 @@ export async function GET(
   const providersToFetch: ProviderType[] = [];
   let includeGemini = false;
   let includeKie = false;
+  let includeHardcodedFal = false;
 
   if (providerFilter) {
     if (providerFilter === "gemini") {
@@ -1135,8 +1140,11 @@ export async function GET(
       }
     } else if (providerFilter === "replicate" && replicateKey) {
       providersToFetch.push("replicate");
-    } else if (providerFilter === "fal" && falKey) {
-      providersToFetch.push("fal");
+    } else if (providerFilter === "fal") {
+      includeHardcodedFal = true;
+      if (falKey) {
+        providersToFetch.push("fal");
+      }
     }
   } else {
   // Include all providers that have keys configured
@@ -1154,7 +1162,7 @@ export async function GET(
   }
 
   // Gemini and Kie are always available (with key for Kie), so we don't fail if no external providers
-  if (providersToFetch.length === 0 && !includeGemini && !includeKie) {
+  if (providersToFetch.length === 0 && !includeGemini && !includeKie && !includeHardcodedFal) {
     return NextResponse.json<ModelsErrorResponse>(
       {
         success: false,
@@ -1199,6 +1207,20 @@ export async function GET(
       success: true,
       count: kieModels.length,
       cached: true, // Hardcoded models are effectively "cached"
+    };
+    anyFromCache = true;
+  }
+
+  if (includeHardcodedFal && !includeKie) {
+    let falModels = HARDCODED_FAL_MODELS;
+    if (searchQuery) {
+      falModels = filterModelsBySearch(falModels, searchQuery);
+    }
+    allModels.push(...falModels);
+    providerResults["fal"] = {
+      success: true,
+      count: falModels.length,
+      cached: true,
     };
     anyFromCache = true;
   }
@@ -1274,9 +1296,10 @@ export async function GET(
 
     // Add to results
     allModels.push(...models);
+    const existingCount = providerResults[provider]?.count || 0;
     providerResults[provider] = {
       success: true,
-      count: models.length,
+      count: existingCount + models.length,
       cached: fromCache,
     };
   }

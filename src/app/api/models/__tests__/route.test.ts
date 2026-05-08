@@ -196,6 +196,18 @@ describe("/api/models route", () => {
       expect(data.providers.fal).toBeUndefined();
     });
 
+    it("GET: should return hardcoded fal models for provider=fal without a FAL key", async () => {
+      const request = createMockGetRequest({ provider: "fal", capabilities: "image-to-video" });
+      const response = await GET(request);
+      const data = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.success).toBe(true);
+      expect(data.providers.fal.success).toBe(true);
+      expect(data.models.some((m: { id: string }) => m.id === "fal-ai/kling-video/v2.6/standard/motion-control")).toBe(true);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it("GET: should filter by capabilities query param", async () => {
       process.env.REPLICATE_API_KEY = "test-replicate-key";
 
