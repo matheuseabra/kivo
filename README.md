@@ -6,10 +6,6 @@
 
 ### An Open Visual Workflow Editor for AI APIs
 
-[![GitHub stars](https://img.shields.io/github/stars/matheuseabra/kivo?style=flat&logo=github)](https://github.com/matheuseabra/kivo/stargazers)
-[![License](https://img.shields.io/github/license/matheuseabra/kivo?style=flat)](LICENSE)
-[![Discord](https://img.shields.io/badge/Discord-555?logo=discord)](https://discord.com/invite/89Nr6EKkTf)
-
 <br />
 
 Build AI image, 3D, audio and video generation pipelines by connecting nodes on a visual canvas.<br />
