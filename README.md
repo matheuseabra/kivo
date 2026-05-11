@@ -2,7 +2,7 @@
 
 <img width="96" alt="Kivo" src="public/kivo-mark.svg" />
 
-## Kivo
+## Kivo TEST
 
 ### An Open Visual Workflow Editor for AI APIs
 
