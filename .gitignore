@@ -47,6 +47,8 @@ logs/*.json
 .planning/
 
 # agents
-.agents/
+.agents/*
+!.agents/skills/
+!.agents/skills/**
 
 .superset/
