@@ -50,5 +50,6 @@ logs/*.json
 .agents/*
 !.agents/skills/
 !.agents/skills/**
+.agents/skills/.DS_Store
 
 .superset/
