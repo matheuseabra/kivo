@@ -290,7 +290,9 @@ describe("/api/list-workflows route", () => {
       // Verify hidden/skip dirs were never traversed as withFileTypes (recursive collection)
       const readdirCalls = mockReaddir.mock.calls;
       const withFileTypeCalls = readdirCalls
-        .filter((call: unknown[]) => call[1]?.withFileTypes)
+        .filter((call: unknown[]) =>
+          Boolean((call[1] as { withFileTypes?: boolean } | undefined)?.withFileTypes)
+        )
         .map((call: unknown[]) => call[0]);
       expect(withFileTypeCalls).not.toContain("/home/user/projects/.hidden");
       expect(withFileTypeCalls).not.toContain("/home/user/projects/node_modules");

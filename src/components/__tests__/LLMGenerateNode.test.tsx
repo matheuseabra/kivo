@@ -66,6 +66,14 @@ describe("LLMGenerateNode", () => {
     type: "llmGenerate" as const,
     data: createNodeData(data),
     selected: false,
+    draggable: false,
+    dragging: false,
+    selectable: true,
+    deletable: true,
+    zIndex: 0,
+    isConnectable: true,
+    positionAbsoluteX: 0,
+    positionAbsoluteY: 0,
   });
 
   describe("Basic Rendering", () => {

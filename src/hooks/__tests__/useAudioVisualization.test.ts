@@ -13,7 +13,7 @@ const { mockDecodeAudioData, MockAudioBuffer } = vi.hoisted(() => {
     readonly length: number;
     readonly duration: number;
     readonly numberOfChannels: number;
-    private channels: Float32Array[];
+    private channels: Float32Array<ArrayBuffer>[];
 
     constructor(options: { length: number; numberOfChannels: number; sampleRate: number }) {
       this.length = options.length;
@@ -28,7 +28,7 @@ const { mockDecodeAudioData, MockAudioBuffer } = vi.hoisted(() => {
         return arr;
       });
     }
-    getChannelData(channel: number): Float32Array { return this.channels[channel]; }
+    getChannelData(channel: number): Float32Array<ArrayBuffer> { return this.channels[channel]; }
     copyFromChannel() {}
     copyToChannel() {}
   }
@@ -227,7 +227,7 @@ describe("useAudioVisualization", () => {
     const blob = createAudioBlob("audio-for-reset");
     const { result, rerender } = renderHook(
       ({ file }: { file: Blob | null }) => useAudioVisualization(file),
-      { initialProps: { file: blob } }
+      { initialProps: { file: blob } as { file: Blob | null } }
     );
 
     await waitFor(() => {

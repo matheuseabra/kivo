@@ -113,6 +113,8 @@ describe("Generate3DNode", () => {
     status: "idle",
     error: null,
     ...overrides,
+    savedFilename: overrides.savedFilename ?? null,
+    savedFilePath: overrides.savedFilePath ?? null,
   });
 
   const createNodeProps = (data: Partial<Generate3DNodeData> = {}) => ({
@@ -120,6 +122,14 @@ describe("Generate3DNode", () => {
     type: "generate3d" as const,
     data: createNodeData(data),
     selected: false,
+    draggable: false,
+    dragging: false,
+    selectable: true,
+    deletable: true,
+    zIndex: 0,
+    isConnectable: true,
+    positionAbsoluteX: 0,
+    positionAbsoluteY: 0,
   });
 
   describe("Basic Rendering", () => {

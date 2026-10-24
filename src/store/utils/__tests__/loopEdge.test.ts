@@ -26,7 +26,7 @@ function makeEdge(source: string, target: string, data?: Record<string, unknown>
 function makeNode(id: string, type: string, data: Partial<WorkflowNodeData> = {}): WorkflowNode {
   return {
     id,
-    type,
+    type: type as WorkflowNode["type"],
     position: { x: 0, y: 0 },
     data: data as WorkflowNodeData,
   };
