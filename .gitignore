@@ -39,7 +39,10 @@ next-env.d.ts
 renders/
 
 # logs
-logs/*.json
+logs/
+
+# local examples and generated assets
+examples/
 
 # .claude
 .claude/
