@@ -152,6 +152,18 @@ describe("Header", () => {
       const folderButton = screen.getByTitle("Open Project Folder");
       expect(folderButton).toBeInTheDocument();
     });
+
+    it("should hide Open Project Folder for a managed project ID", () => {
+      mockUseWorkflowStore.mockImplementation((selector) => {
+        return selector(createDefaultState({
+          workflowName: "Managed Project",
+          workflowId: "project-123",
+          saveDirectoryPath: "9a6daf23-73b8-4f0e-833f-73f1e813d2cd",
+        }));
+      });
+      render(<Header />);
+      expect(screen.queryByTitle("Open Project Folder")).not.toBeInTheDocument();
+    });
   });
 
   describe("Save State Display", () => {

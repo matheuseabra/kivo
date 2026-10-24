@@ -4,6 +4,17 @@ import * as path from "path";
 import { logger } from "@/utils/logger";
 import { validateWorkflowPath } from "@/utils/pathValidation";
 import { isVercelEnvironment, unsupportedOnVercelResponse } from "@/utils/vercelEnvironment";
+import {
+  ensureHostedDiskSpace,
+  getManagedProjectDirectory,
+  isHostedStorageMode,
+  MAX_IMAGE_FILE_BYTES,
+  MAX_IMAGE_REQUEST_BYTES,
+  readJsonRequest,
+  resolveManagedProjectPath,
+  toHostedStorageError,
+  validateProjectId,
+} from "@/lib/hostedStorage";
 
 export const maxDuration = 300; // 5 minute timeout for large image operations
 
@@ -37,26 +48,37 @@ export async function POST(request: NextRequest) {
   let workflowPath: string | undefined;
   let imageId: string | undefined;
   let folder: string | undefined;
+  let logWorkflowPath: string | undefined;
+  let logImageId: string | undefined;
+  const hosted = isHostedStorageMode();
   try {
-    const body = await request.json();
+    const body = hosted
+      ? await readJsonRequest<Record<string, any>>(request, MAX_IMAGE_REQUEST_BYTES)
+      : await request.json();
     workflowPath = body.workflowPath;
     imageId = body.imageId;
+    const requestedFolder = body.folder;
     folder = body.folder || IMAGES_FOLDER; // Default to "inputs"
     const imageData = body.imageData; // Base64 data URL
+    logWorkflowPath = hosted && !validateProjectId(workflowPath) ? undefined : workflowPath;
+    logImageId = hosted && (typeof imageId !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,159}$/.test(imageId)) ? undefined : imageId;
 
+    if (hosted && requestedFolder !== undefined && requestedFolder !== IMAGES_FOLDER && requestedFolder !== "generations") {
+      return NextResponse.json({ success: false, error: "Invalid image folder" }, { status: 400 });
+    }
     // Validate folder is one of the allowed values
     if (folder !== IMAGES_FOLDER && folder !== "generations") {
       folder = IMAGES_FOLDER;
     }
 
     logger.info('file.save', 'Workflow image save request received', {
-      workflowPath,
-      imageId,
+      workflowPath: logWorkflowPath,
+      imageId: logImageId,
       folder,
       hasImageData: !!imageData,
     });
 
-    if (!workflowPath || !imageId || !imageData) {
+    if (typeof workflowPath !== "string" || typeof imageId !== "string" || typeof imageData !== "string") {
       logger.warn('file.save', 'Workflow image save validation failed: missing fields', {
         hasWorkflowPath: !!workflowPath,
         hasImageId: !!imageId,
@@ -67,26 +89,31 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,159}$/.test(imageId)) {
+      return NextResponse.json({ success: false, error: "Invalid imageId" }, { status: 400 });
+    }
+    const safeImageId = imageId;
 
-    // Validate path to prevent traversal attacks
-    const pathValidation = validateWorkflowPath(workflowPath);
-    if (!pathValidation.valid) {
-      logger.warn('file.error', 'Workflow image save failed: invalid path', {
-        workflowPath,
-        error: pathValidation.error,
-      });
-      return NextResponse.json(
-        { success: false, error: pathValidation.error },
-        { status: 400 }
-      );
+    let projectDirectory: string;
+    if (hosted) {
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(workflowPath)) {
+        return NextResponse.json({ success: false, error: "Invalid project ID" }, { status: 400 });
+      }
+      projectDirectory = await getManagedProjectDirectory(workflowPath);
+    } else {
+      const pathValidation = validateWorkflowPath(workflowPath);
+      if (!pathValidation.valid) {
+        return NextResponse.json({ success: false, error: pathValidation.error }, { status: 400 });
+      }
+      projectDirectory = workflowPath;
     }
 
     // Validate workflow directory exists, or create it if missing
     try {
-      const stats = await fs.stat(workflowPath);
+      const stats = await fs.stat(projectDirectory);
       if (!stats.isDirectory()) {
         logger.warn('file.error', 'Workflow image save failed: path is not a directory', {
-          workflowPath,
+          workflowPath: logWorkflowPath,
         });
         return NextResponse.json(
           { success: false, error: "Workflow path is not a directory" },
@@ -102,7 +129,7 @@ export async function POST(request: NextRequest) {
 
       if (!isNotFound) {
         logger.warn('file.error', 'Workflow image save failed: directory validation error', {
-          workflowPath,
+          workflowPath: logWorkflowPath,
           error: dirError instanceof Error ? dirError.message : 'Unknown error',
         });
         return NextResponse.json(
@@ -112,13 +139,14 @@ export async function POST(request: NextRequest) {
       }
 
       try {
-        await fs.mkdir(workflowPath, { recursive: true });
+        if (hosted) throw dirError;
+        await fs.mkdir(projectDirectory, { recursive: true });
         logger.info('file.save', 'Created workflow directory for image save', {
-          workflowPath,
+          workflowPath: logWorkflowPath,
         });
       } catch (mkdirError) {
         logger.error('file.error', 'Failed to create workflow directory', {
-          workflowPath,
+          workflowPath: logWorkflowPath,
         }, mkdirError instanceof Error ? mkdirError : undefined);
         return NextResponse.json(
           { success: false, error: "Failed to create workflow directory" },
@@ -128,42 +156,45 @@ export async function POST(request: NextRequest) {
     }
 
     // Create target folder if it doesn't exist
-    const targetFolder = path.join(workflowPath, folder);
+    const targetFolder = hosted
+      ? await resolveManagedProjectPath(workflowPath, folder)
+      : path.join(projectDirectory, folder);
     try {
       await fs.mkdir(targetFolder, { recursive: true });
+      if (hosted) await resolveManagedProjectPath(workflowPath, folder);
     } catch (mkdirError) {
       logger.error('file.error', 'Failed to create target folder', {
-        targetFolder,
-      }, mkdirError instanceof Error ? mkdirError : undefined);
+        targetFolder: hosted ? `${workflowPath}/${folder}` : targetFolder,
+      }, hosted ? undefined : mkdirError instanceof Error ? mkdirError : undefined);
       return NextResponse.json(
         { success: false, error: "Failed to create target folder" },
         { status: 500 }
       );
     }
 
-    // Sanitize imageId to prevent path traversal
-    const safeImageId = path.basename(imageId);
-    if (safeImageId !== imageId || imageId.includes('..')) {
-      return NextResponse.json(
-        { success: false, error: "Invalid imageId" },
-        { status: 400 }
-      );
-    }
-
     // Extract MIME type and determine file extension
+    if (hosted && !/^data:image\/(png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(imageData)) {
+      return NextResponse.json({ success: false, error: "Unsupported image data" }, { status: 400 });
+    }
     const { extension } = getMimeAndExtension(imageData);
     const filename = `${safeImageId}.${extension}`;
-    const filePath = path.join(targetFolder, filename);
 
     // Extract base64 data and convert to buffer
     const base64Data = imageData.replace(/^data:image\/\w+;base64,/, "");
     const buffer = Buffer.from(base64Data, "base64");
+    if (hosted && (buffer.length > MAX_IMAGE_FILE_BYTES || buffer.length === 0)) {
+      return NextResponse.json({ success: false, error: "Image file must be between 1 byte and 24 MiB" }, { status: 413 });
+    }
+    if (hosted) await ensureHostedDiskSpace(buffer.length);
+    const filePath = hosted
+      ? await resolveManagedProjectPath(workflowPath, folder, filename)
+      : path.join(targetFolder, filename);
 
     // Write the image file
     await fs.writeFile(filePath, buffer);
 
     logger.info('file.save', 'Workflow image saved successfully', {
-      filePath,
+      filePath: hosted ? `${workflowPath}/${folder}/${filename}` : filePath,
       imageId,
       fileSize: buffer.length,
     });
@@ -171,19 +202,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       imageId,
-      filePath,
+      filePath: hosted ? `${workflowPath}/${folder}/${filename}` : filePath,
     });
   } catch (error) {
+    const storageError = toHostedStorageError(error);
     logger.error('file.error', 'Failed to save workflow image', {
-      workflowPath,
-      imageId,
-    }, error instanceof Error ? error : undefined);
+      workflowPath: logWorkflowPath,
+      imageId: logImageId,
+    }, hosted ? undefined : error instanceof Error ? error : undefined);
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Save failed",
+        error: hosted ? storageError.message : error instanceof Error ? error.message : "Save failed",
       },
-      { status: 500 }
+      { status: hosted ? storageError.status : 500 }
     );
   }
 }
@@ -197,11 +229,14 @@ export async function GET(request: NextRequest) {
   const workflowPath = request.nextUrl.searchParams.get("workflowPath");
   const imageId = request.nextUrl.searchParams.get("imageId");
   const folder = request.nextUrl.searchParams.get("folder"); // Optional hint for which folder to check first
+  const hosted = isHostedStorageMode();
+  const logWorkflowPath = hosted && !validateProjectId(workflowPath) ? undefined : workflowPath;
+  const logImageId = hosted && (!imageId || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,159}$/.test(imageId)) ? undefined : imageId;
 
   logger.info('file.load', 'Workflow image load request received', {
-    workflowPath,
-    imageId,
-    folder,
+    workflowPath: logWorkflowPath,
+    imageId: logImageId,
+    folder: hosted && folder !== IMAGES_FOLDER && folder !== "generations" ? undefined : folder,
   });
 
   if (!workflowPath || !imageId) {
@@ -216,31 +251,33 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Validate path to prevent traversal attacks
-    const pathValidation = validateWorkflowPath(workflowPath);
-    if (!pathValidation.valid) {
-      logger.warn('file.error', 'Workflow image load failed: invalid path', {
-        workflowPath,
-        error: pathValidation.error,
-      });
-      return NextResponse.json(
-        { success: false, error: pathValidation.error },
-        { status: 400 }
-      );
+    const projectDirectory = hosted
+      ? await getManagedProjectDirectory(workflowPath)
+      : workflowPath;
+    if (!hosted) {
+      const pathValidation = validateWorkflowPath(workflowPath);
+      if (!pathValidation.valid) {
+        return NextResponse.json({ success: false, error: pathValidation.error }, { status: 400 });
+      }
+    }
+
+    if (hosted && folder && folder !== IMAGES_FOLDER && folder !== "generations") {
+      return NextResponse.json({ success: false, error: "Invalid image folder" }, { status: 400 });
     }
 
     // Sanitize imageId to prevent path traversal
-    const safeImageId = path.basename(imageId);
-    if (safeImageId !== imageId || imageId.includes('..')) {
+    const validImageId = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,159}$/.test(imageId);
+    if (!validImageId) {
       return NextResponse.json(
         { success: false, error: "Invalid imageId" },
         { status: 400 }
       );
     }
+    const safeImageId = imageId;
 
     // Validate workflow directory exists
     try {
-      const stats = await fs.stat(workflowPath);
+      const stats = await fs.stat(projectDirectory);
       if (!stats.isDirectory()) {
         return NextResponse.json(
           { success: false, error: "Workflow path is not a directory" },
@@ -256,9 +293,9 @@ export async function GET(request: NextRequest) {
 
     // Construct file path - check folders and extensions in order
     const possibleExtensions = ["png", "jpg", "jpeg", "gif", "webp"];
-    const inputsFolder = path.join(workflowPath, IMAGES_FOLDER);
-    const generationsFolder = path.join(workflowPath, "generations");
-    const legacyFolder = path.join(workflowPath, LEGACY_IMAGES_FOLDER);
+    const inputsFolder = path.join(projectDirectory, IMAGES_FOLDER);
+    const generationsFolder = path.join(projectDirectory, "generations");
+    const legacyFolder = path.join(projectDirectory, LEGACY_IMAGES_FOLDER);
 
     // Build search order based on folder hint
     const searchOrder = folder === "generations"
@@ -272,13 +309,17 @@ export async function GET(request: NextRequest) {
     for (const searchFolder of searchOrder) {
       for (const ext of possibleExtensions) {
         const filename = `${safeImageId}.${ext}`;
-        const candidatePath = path.join(searchFolder, filename);
         try {
+          const candidatePath = hosted
+            ? await resolveManagedProjectPath(workflowPath, path.basename(searchFolder), filename)
+            : path.join(searchFolder, filename);
           await fs.access(candidatePath);
           filePath = candidatePath;
           foundExtension = ext;
           if (searchFolder === legacyFolder) {
-            logger.info('file.load', 'Found image in legacy .images folder', { filePath });
+            logger.info('file.load', 'Found image in legacy .images folder', {
+              filePath: hosted ? `${workflowPath}/.images/${filename}` : filePath,
+            });
           }
           break;
         } catch {
@@ -292,14 +333,19 @@ export async function GET(request: NextRequest) {
       // Return 200 with success: false to avoid Next.js error overlay
       // Missing files are expected when workflow refs point to deleted/moved images
       logger.info('file.load', 'Workflow image not found (expected for missing refs)', {
-        imageId,
-        searchedFolders: searchOrder,
+        imageId: logImageId,
+        searchedFolders: hosted ? [IMAGES_FOLDER, "generations", LEGACY_IMAGES_FOLDER] : searchOrder,
       });
       return NextResponse.json({
         success: false,
         error: "Image file not found",
         notFound: true,
       });
+    }
+
+    const imageStats = await fs.stat(filePath);
+    if (hosted && imageStats.size > MAX_IMAGE_FILE_BYTES) {
+      return NextResponse.json({ success: false, error: "Image file is too large" }, { status: 413 });
     }
 
     // Read the image file
@@ -313,8 +359,8 @@ export async function GET(request: NextRequest) {
     const dataUrl = `data:${mimeType};base64,${base64}`;
 
     logger.info('file.load', 'Workflow image loaded successfully', {
-      filePath,
-      imageId,
+      filePath: hosted ? `${workflowPath}/${path.basename(path.dirname(filePath))}/${path.basename(filePath)}` : filePath,
+      imageId: logImageId,
       fileSize: buffer.length,
     });
 
@@ -324,16 +370,17 @@ export async function GET(request: NextRequest) {
       image: dataUrl,
     });
   } catch (error) {
+    const storageError = toHostedStorageError(error);
     logger.error('file.error', 'Failed to load workflow image', {
-      workflowPath,
-      imageId,
-    }, error instanceof Error ? error : undefined);
+      workflowPath: logWorkflowPath,
+      imageId: logImageId,
+    }, hosted ? undefined : error instanceof Error ? error : undefined);
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Load failed",
+        error: hosted ? storageError.message : error instanceof Error ? error.message : "Load failed",
       },
-      { status: 500 }
+      { status: hosted ? storageError.status : 500 }
     );
   }
 }

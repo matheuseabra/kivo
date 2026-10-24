@@ -5,6 +5,7 @@ import { writeFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { isVercelEnvironment, unsupportedOnVercelResponse } from "@/utils/vercelEnvironment";
+import { isHostedStorageMode } from "@/lib/hostedStorage";
 
 const execAsync = promisify(exec);
 
@@ -37,6 +38,9 @@ export function normalizeSelectedPath(selectedPath: string, platform: string): s
 
 // GET: Open native directory picker and return the selected path
 export async function GET() {
+  if (isHostedStorageMode()) {
+    return NextResponse.json({ success: false, error: "Native folder picker is disabled in hosted mode" }, { status: 404 });
+  }
   if (isVercelEnvironment()) {
     return unsupportedOnVercelResponse("Opening the native folder picker");
   }

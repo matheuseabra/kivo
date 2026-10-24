@@ -5,6 +5,7 @@ import { stat } from "fs/promises";
 import path from "path";
 import os from "os";
 import { isVercelEnvironment, unsupportedOnVercelResponse } from "@/utils/vercelEnvironment";
+import { isHostedStorageMode } from "@/lib/hostedStorage";
 
 const execFileAsync = promisify(execFile);
 
@@ -27,6 +28,9 @@ function isLocalhostRequest(req: NextRequest): boolean {
 }
 
 export async function POST(req: NextRequest) {
+    if (isHostedStorageMode()) {
+        return NextResponse.json({ success: false, error: "Opening server files is disabled in hosted mode" }, { status: 404 });
+    }
     if (isVercelEnvironment()) {
         return unsupportedOnVercelResponse("Revealing local files in the OS file manager");
     }

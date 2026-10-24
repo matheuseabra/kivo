@@ -748,7 +748,8 @@ async function saveVideoAndGetRef(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          directoryPath: `${workflowPath}/generations`,
+          directoryPath: workflowPath,
+          folder: "generations",
           createDirectory: true,
           imageId: videoId,
           video: videoData,
@@ -816,7 +817,8 @@ async function saveAudioAndGetRef(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          directoryPath: `${workflowPath}/generations`,
+          directoryPath: workflowPath,
+          folder: "generations",
           createDirectory: true,
           imageId: audioId,
           audio: audioData,
@@ -1288,7 +1290,8 @@ async function loadMediaById(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        directoryPath: `${workflowPath}/generations`,
+        directoryPath: workflowPath,
+        folder: "generations",
         imageId: mediaId,
       }),
     });
