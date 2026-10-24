@@ -11,3 +11,5 @@ Callers identify the expected media kind. Images, videos, audio and 3D models ea
 Tests inject the resolver and HTTP response stream. They cover public IPv4 and IPv6 addresses, private and mapped addresses, mixed DNS answers, private redirects, redirect limits, invalid content types, chunked size limits and timeouts. These tests do not make external network requests.
 
 The helper secures server-side downloads. A provider result that is returned as a URL for browser-side use does not pass through this server download boundary.
+
+Gemini Veo download URIs are accepted only from `https://generativelanguage.googleapis.com`. The API key is added only after this exact host and HTTPS check. The URL is never logged, and the safe downloader does not copy its query parameters to a redirect destination.
