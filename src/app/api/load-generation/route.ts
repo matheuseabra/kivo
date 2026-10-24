@@ -3,6 +3,16 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { logger } from "@/utils/logger";
 import { isVercelEnvironment, unsupportedOnVercelResponse } from "@/utils/vercelEnvironment";
+import {
+  getManagedProjectDirectory,
+  isHostedStorageMode,
+  MAX_GENERATION_FILE_BYTES,
+  readJsonRequest,
+  resolveManagedProjectPath,
+  toHostedStorageError,
+  validateProjectId,
+} from "@/lib/hostedStorage";
+import { validateWorkflowPath } from "@/utils/pathValidation";
 
 // Supported file extensions
 const SUPPORTED_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'mp3', 'wav', 'ogg', 'flac', 'aac'];
@@ -38,17 +48,25 @@ export async function POST(request: NextRequest) {
 
   let directoryPath: string | undefined;
   let imageId: string | undefined;
+  let logDirectoryPath: string | undefined;
+  let logImageId: string | undefined;
+  const hosted = isHostedStorageMode();
   try {
-    const body = await request.json();
+    const body = hosted
+      ? await readJsonRequest<Record<string, any>>(request, 4096)
+      : await request.json();
     directoryPath = body.directoryPath;
     imageId = body.imageId;
+    const folder = body.folder;
+    logDirectoryPath = hosted && !validateProjectId(directoryPath) ? undefined : directoryPath;
+    logImageId = hosted && (typeof imageId !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,159}$/.test(imageId)) ? undefined : imageId;
 
     logger.info('file.load', 'Generation load request received', {
-      directoryPath,
-      imageId,
+      directoryPath: logDirectoryPath,
+      imageId: logImageId,
     });
 
-    if (!directoryPath || !imageId) {
+    if (typeof directoryPath !== "string" || typeof imageId !== "string") {
       logger.warn('file.load', 'Generation load validation failed: missing fields', {
         hasDirectoryPath: !!directoryPath,
         hasImageId: !!imageId,
@@ -59,12 +77,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,159}$/.test(imageId)) {
+      return NextResponse.json({ success: false, error: "Invalid image ID" }, { status: 400 });
+    }
+    if (hosted && (!validateProjectId(directoryPath) || (folder !== undefined && folder !== "generations"))) {
+      return NextResponse.json({ success: false, error: "Invalid project ID or folder" }, { status: 400 });
+    }
+
+    let generationDirectory: string;
+    if (hosted) {
+      await getManagedProjectDirectory(directoryPath);
+      generationDirectory = await resolveManagedProjectPath(directoryPath, "generations");
+    } else {
+      const pathValidation = validateWorkflowPath(directoryPath);
+      if (!pathValidation.valid) {
+        return NextResponse.json({ success: false, error: pathValidation.error }, { status: 400 });
+      }
+      generationDirectory = folder === "generations"
+        ? path.join(directoryPath, "generations")
+        : directoryPath;
+    }
+
     // Validate directory exists
     try {
-      const stats = await fs.stat(directoryPath);
+      const stats = await fs.stat(generationDirectory);
       if (!stats.isDirectory()) {
         logger.warn('file.error', 'Generation load failed: path is not a directory', {
-          directoryPath,
+          directoryPath: logDirectoryPath,
         });
         return NextResponse.json(
           { success: false, error: "Path is not a directory" },
@@ -73,7 +112,7 @@ export async function POST(request: NextRequest) {
       }
     } catch (dirError) {
       logger.warn('file.error', 'Generation load failed: directory does not exist', {
-        directoryPath,
+        directoryPath: logDirectoryPath,
       });
       return NextResponse.json(
         { success: false, error: "Directory does not exist" },
@@ -86,7 +125,9 @@ export async function POST(request: NextRequest) {
     let filePath: string | null = null;
 
     for (const ext of SUPPORTED_EXTENSIONS) {
-      const candidatePath = path.join(directoryPath, `${imageId}.${ext}`);
+      const candidatePath = hosted
+        ? await resolveManagedProjectPath(directoryPath, "generations", `${imageId}.${ext}`)
+        : path.join(generationDirectory, `${imageId}.${ext}`);
       try {
         await fs.access(candidatePath);
         foundExtension = ext;
@@ -101,8 +142,8 @@ export async function POST(request: NextRequest) {
       // Return 200 with success: false to avoid Next.js error overlay
       // Missing files are expected when workflow refs point to deleted/moved images
       logger.info('file.load', 'Generation file not found (expected for missing refs)', {
-        imageId,
-        directoryPath,
+        imageId: logImageId,
+        directoryPath: logDirectoryPath,
       });
       return NextResponse.json({
         success: false,
@@ -112,6 +153,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Read the file
+    const fileStats = await fs.stat(filePath);
+    if (hosted && fileStats.size > MAX_GENERATION_FILE_BYTES) {
+      return NextResponse.json({ success: false, error: "Generation file is too large" }, { status: 413 });
+    }
     const buffer = await fs.readFile(filePath);
 
     // Convert to base64 data URL
@@ -125,7 +170,7 @@ export async function POST(request: NextRequest) {
     const contentType = isVideo ? 'video' : isAudio ? 'audio' : 'image';
 
     logger.info('file.load', 'Generation loaded successfully', {
-      filePath,
+      filePath: hosted ? `${directoryPath}/generations/${imageId}.${foundExtension}` : filePath,
       extension: foundExtension,
       contentType,
       fileSize: buffer.length,
@@ -147,16 +192,17 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(response);
   } catch (error) {
+    const storageError = toHostedStorageError(error);
     logger.error('file.error', 'Failed to load generation', {
-      directoryPath,
-      imageId,
-    }, error instanceof Error ? error : undefined);
+      directoryPath: logDirectoryPath,
+      imageId: logImageId,
+    }, hosted ? undefined : error instanceof Error ? error : undefined);
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Load failed",
+        error: hosted ? storageError.message : error instanceof Error ? error.message : "Load failed",
       },
-      { status: 500 }
+      { status: hosted ? storageError.status : 500 }
     );
   }
 }

@@ -4,6 +4,18 @@ import * as path from "path";
 import { logger } from "@/utils/logger";
 import { validateWorkflowPath } from "@/utils/pathValidation";
 import { isVercelEnvironment, unsupportedOnVercelResponse } from "@/utils/vercelEnvironment";
+import {
+  getManagedProjectDirectory,
+  ensureHostedDiskSpace,
+  isHostedStorageMode,
+  MAX_WORKFLOW_REQUEST_BYTES,
+  readManagedProjectEntries,
+  safeHostedWorkflowFilename,
+  readJsonRequest,
+  resolveManagedProjectPath,
+  toHostedStorageError,
+  validateProjectId,
+} from "@/lib/hostedStorage";
 
 export const maxDuration = 300; // 5 minute timeout for large workflow files
 
@@ -15,21 +27,28 @@ export async function POST(request: NextRequest) {
 
   let directoryPath: string | undefined;
   let filename: string | undefined;
+  let logDirectoryPath: string | undefined;
+  let logFilename: string | undefined;
+  const hosted = isHostedStorageMode();
   try {
-    const body = await request.json();
+    const body = hosted
+      ? await readJsonRequest<Record<string, any>>(request, MAX_WORKFLOW_REQUEST_BYTES)
+      : await request.json();
     directoryPath = body.directoryPath;
     filename = body.filename;
     const workflow = body.workflow;
+    logDirectoryPath = hosted && !validateProjectId(directoryPath) ? undefined : directoryPath;
+    logFilename = hosted ? safeHostedWorkflowFilename(filename) || undefined : filename;
 
     logger.info('file.save', 'Workflow save request received', {
-      directoryPath,
-      filename,
+      directoryPath: logDirectoryPath,
+      filename: logFilename,
       hasWorkflow: !!workflow,
       nodeCount: workflow?.nodes?.length,
       edgeCount: workflow?.edges?.length,
     });
 
-    if (!directoryPath || !filename || !workflow) {
+    if (typeof directoryPath !== "string" || typeof filename !== "string" || !workflow) {
       logger.warn('file.save', 'Workflow save validation failed: missing fields', {
         hasDirectoryPath: !!directoryPath,
         hasFilename: !!filename,
@@ -41,25 +60,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate path to prevent traversal attacks
-    const pathValidation = validateWorkflowPath(directoryPath);
-    if (!pathValidation.valid) {
-      logger.warn('file.error', 'Workflow save failed: invalid path', {
-        directoryPath,
-        error: pathValidation.error,
-      });
-      return NextResponse.json(
-        { success: false, error: pathValidation.error },
-        { status: 400 }
-      );
+    let projectDirectory: string;
+    if (hosted) {
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(directoryPath)) {
+        return NextResponse.json({ success: false, error: "Invalid project ID" }, { status: 400 });
+      }
+      projectDirectory = await getManagedProjectDirectory(directoryPath);
+    } else {
+      const pathValidation = validateWorkflowPath(directoryPath);
+      if (!pathValidation.valid) {
+        return NextResponse.json({ success: false, error: pathValidation.error }, { status: 400 });
+      }
+      projectDirectory = directoryPath;
     }
 
     // Ensure project directory exists (supports saving into new subfolders)
     try {
-      const stats = await fs.stat(directoryPath);
+      const stats = await fs.stat(projectDirectory);
       if (!stats.isDirectory()) {
         logger.warn('file.error', 'Workflow save failed: path is not a directory', {
-          directoryPath,
+          directoryPath: logDirectoryPath,
         });
         return NextResponse.json(
           { success: false, error: "Path is not a directory" },
@@ -75,7 +95,7 @@ export async function POST(request: NextRequest) {
 
       if (!isNotFound) {
         logger.warn('file.error', 'Workflow save failed: directory validation error', {
-          directoryPath,
+          directoryPath: logDirectoryPath,
           error: dirError instanceof Error ? dirError.message : 'Unknown error',
         });
         return NextResponse.json(
@@ -85,10 +105,11 @@ export async function POST(request: NextRequest) {
       }
 
       try {
-        await fs.mkdir(directoryPath, { recursive: true });
+        if (hosted) throw dirError;
+        await fs.mkdir(projectDirectory, { recursive: true });
       } catch (mkdirError) {
         logger.warn('file.error', 'Workflow save failed: could not create directory', {
-          directoryPath,
+          directoryPath: logDirectoryPath,
           error: mkdirError instanceof Error ? mkdirError.message : 'Unknown error',
         });
         return NextResponse.json(
@@ -99,13 +120,22 @@ export async function POST(request: NextRequest) {
     }
 
     // Auto-create subfolders for inputs and generations
-    const inputsFolder = path.join(directoryPath, "inputs");
-    const generationsFolder = path.join(directoryPath, "generations");
+    const inputsFolder = hosted
+      ? await resolveManagedProjectPath(directoryPath, "inputs")
+      : path.join(projectDirectory, "inputs");
+    const generationsFolder = hosted
+      ? await resolveManagedProjectPath(directoryPath, "generations")
+      : path.join(projectDirectory, "generations");
 
     try {
       await fs.mkdir(inputsFolder, { recursive: true });
       await fs.mkdir(generationsFolder, { recursive: true });
+      if (hosted) {
+        await resolveManagedProjectPath(directoryPath, "inputs");
+        await resolveManagedProjectPath(directoryPath, "generations");
+      }
     } catch (mkdirError) {
+      if (hosted) throw mkdirError;
       logger.warn('file.save', 'Failed to create subfolders (non-fatal)', {
         inputsFolder,
         generationsFolder,
@@ -115,33 +145,45 @@ export async function POST(request: NextRequest) {
     }
 
     // Sanitize filename (remove special chars, ensure .json extension)
-    const safeName = filename.replace(/[^a-zA-Z0-9-_]/g, "_");
-    const filePath = path.join(directoryPath, `${safeName}.json`);
+    const hostedSafeName = hosted ? safeHostedWorkflowFilename(filename) : null;
+    if (hosted && !hostedSafeName) {
+      return NextResponse.json({ success: false, error: "Invalid filename" }, { status: 400 });
+    }
+    const safeName = hosted ? hostedSafeName! : filename.replace(/[^a-zA-Z0-9-_]/g, "_");
+    const filePath = hosted
+      ? await resolveManagedProjectPath(directoryPath, `${safeName}.json`)
+      : path.join(projectDirectory, `${safeName}.json`);
 
     // Write workflow JSON
-    const json = JSON.stringify(workflow, null, 2);
+    const workflowToSave = hosted ? { ...workflow, directoryPath } : workflow;
+    const json = JSON.stringify(workflowToSave, null, 2);
+    if (hosted && Buffer.byteLength(json, "utf-8") > MAX_WORKFLOW_REQUEST_BYTES) {
+      return NextResponse.json({ success: false, error: "Workflow file is too large" }, { status: 413 });
+    }
+    if (hosted) await ensureHostedDiskSpace(Buffer.byteLength(json, "utf-8"));
     await fs.writeFile(filePath, json, "utf-8");
 
     logger.info('file.save', 'Workflow saved successfully', {
-      filePath,
+      filePath: hosted ? `${directoryPath}/${safeName}.json` : filePath,
       fileSize: json.length,
     });
 
     return NextResponse.json({
       success: true,
-      filePath,
+      filePath: hosted ? `${directoryPath}/${safeName}.json` : filePath,
     });
   } catch (error) {
+    const storageError = toHostedStorageError(error);
     logger.error('file.error', 'Failed to save workflow', {
-      directoryPath,
-      filename,
-    }, error instanceof Error ? error : undefined);
+      directoryPath: logDirectoryPath,
+      filename: logFilename,
+    }, hosted ? undefined : error instanceof Error ? error : undefined);
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Save failed",
+        error: hosted ? storageError.message : error instanceof Error ? error.message : "Save failed",
       },
-      { status: 500 }
+      { status: hosted ? storageError.status : 500 }
     );
   }
 }
@@ -154,9 +196,11 @@ export async function GET(request: NextRequest) {
 
   const directoryPath = request.nextUrl.searchParams.get("path");
   const shouldLoad = request.nextUrl.searchParams.get("load") === "true";
+  const hosted = isHostedStorageMode();
+  const logDirectoryPath = hosted && !validateProjectId(directoryPath) ? undefined : directoryPath;
 
   logger.info('file.load', 'Directory request received', {
-    directoryPath,
+    directoryPath: logDirectoryPath,
     shouldLoad,
   });
 
@@ -168,21 +212,18 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Validate path to prevent traversal attacks
-  const pathValidation = validateWorkflowPath(directoryPath);
-  if (!pathValidation.valid) {
-    logger.warn('file.error', 'Directory validation failed: invalid path', {
-      directoryPath,
-      error: pathValidation.error,
-    });
-    return NextResponse.json(
-      { success: false, error: pathValidation.error },
-      { status: 400 }
-    );
-  }
-
   try {
-    const stats = await fs.stat(directoryPath);
+    let projectDirectory: string;
+    if (hosted) {
+      projectDirectory = await getManagedProjectDirectory(directoryPath);
+    } else {
+      const pathValidation = validateWorkflowPath(directoryPath);
+      if (!pathValidation.valid) {
+        return NextResponse.json({ success: false, error: pathValidation.error }, { status: 400 });
+      }
+      projectDirectory = directoryPath;
+    }
+    const stats = await fs.stat(projectDirectory);
     const isDirectory = stats.isDirectory();
 
     if (!isDirectory) {
@@ -195,15 +236,23 @@ export async function GET(request: NextRequest) {
 
     // If load=true, find and return a workflow JSON from the directory
     if (shouldLoad) {
-      const entries = await fs.readdir(directoryPath);
-      const jsonFiles = entries.filter(f => f.endsWith(".json"));
+      const jsonFiles = hosted
+        ? (await readManagedProjectEntries(directoryPath))
+            .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+            .map((entry) => entry.name)
+        : (await fs.readdir(projectDirectory)).filter((entry) => entry.endsWith(".json"));
 
       // Gather candidates with mtime for deterministic selection (newest first)
       const candidates: { jsonFile: string; filePath: string; mtime: number }[] = [];
       for (const jsonFile of jsonFiles) {
         try {
-          const filePath = path.join(directoryPath, jsonFile);
+          const filePath = hosted
+            ? await resolveManagedProjectPath(directoryPath, jsonFile)
+            : path.join(projectDirectory, jsonFile);
           const stat = await fs.stat(filePath);
+          if (hosted && stat.size > MAX_WORKFLOW_REQUEST_BYTES) {
+            return NextResponse.json({ success: false, error: "Workflow file is too large" }, { status: 413 });
+          }
           candidates.push({ jsonFile, filePath, mtime: stat.mtimeMs });
         } catch {
           continue;
@@ -222,8 +271,9 @@ export async function GET(request: NextRequest) {
             Array.isArray(parsed.edges)
           ) {
             const filename = path.basename(jsonFile, ".json");
+            if (hosted) parsed.directoryPath = directoryPath;
             logger.info('file.load', 'Workflow loaded from directory', {
-              directoryPath,
+              directoryPath: logDirectoryPath,
               filename: jsonFile,
             });
             return NextResponse.json({
@@ -239,7 +289,7 @@ export async function GET(request: NextRequest) {
       }
 
       logger.warn('file.load', 'No valid workflow file found in directory', {
-        directoryPath,
+        directoryPath: logDirectoryPath,
         jsonFilesChecked: jsonFiles.length,
       });
       return NextResponse.json(
@@ -249,7 +299,7 @@ export async function GET(request: NextRequest) {
     }
 
     logger.info('file.load', 'Directory validation successful', {
-      directoryPath,
+      directoryPath: logDirectoryPath,
       exists: true,
       isDirectory,
     });
@@ -259,9 +309,13 @@ export async function GET(request: NextRequest) {
       isDirectory,
     });
   } catch (error) {
+    const storageError = toHostedStorageError(error);
     logger.info('file.load', 'Directory does not exist', {
-      directoryPath,
+      directoryPath: logDirectoryPath,
     });
+    if (hosted) {
+      return NextResponse.json({ success: false, error: storageError.message }, { status: storageError.status });
+    }
     return NextResponse.json({
       success: true,
       exists: false,

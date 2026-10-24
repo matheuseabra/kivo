@@ -2233,6 +2233,7 @@ const workflowStoreImpl: StateCreator<WorkflowStore> = (set, get) => ({
 
     // Determine the workflow directory path (passed in, from saved config, or embedded in legacy workflow JSON)
     const directoryPath = workflowPath || savedConfig?.directoryPath || workflow.directoryPath || null;
+    const managedProjectId = typeof directoryPath === "string" && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(directoryPath);
 
     // Hydrate media if we have a directory path and the workflow has media refs
     let hydratedWorkflow = workflow;
@@ -2268,7 +2269,7 @@ const workflowStoreImpl: StateCreator<WorkflowStore> = (set, get) => ({
       workflowId: workflow.id || null,
       workflowName: workflow.name,
       saveDirectoryPath: directoryPath || null,
-      generationsPath: savedConfig?.generationsPath || null,
+      generationsPath: managedProjectId ? directoryPath : savedConfig?.generationsPath || null,
       lastSavedAt: savedConfig?.lastSavedAt || null,
       hasUnsavedChanges: false,
       // Restore cost data
@@ -2355,9 +2356,12 @@ const workflowStoreImpl: StateCreator<WorkflowStore> = (set, get) => ({
 
   // Auto-save actions
   setWorkflowMetadata: (id: string, name: string, path: string, generationsPath?: string | null) => {
-    // Auto-derive generationsPath: use provided value, fall back to existing, then auto-derive
+    // Hosted project IDs are opaque tokens; local projects keep their filesystem subfolder path.
     const currentGenPath = get().generationsPath;
-    const derivedGenerationsPath = generationsPath ?? currentGenPath ?? `${path}/generations`;
+    const managedProjectId = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(path);
+    const derivedGenerationsPath = managedProjectId
+      ? path
+      : generationsPath ?? currentGenPath ?? `${path}/generations`;
 
     set({
       workflowId: id,

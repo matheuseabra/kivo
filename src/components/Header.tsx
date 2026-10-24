@@ -99,6 +99,7 @@ export function Header() {
 
   const isProjectConfigured = !!workflowName;
   const canSave = !!(workflowId && workflowName && saveDirectoryPath);
+  const managedProjectSelected = !!saveDirectoryPath && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(saveDirectoryPath);
 
   const formatTime = (timestamp: number) => {
     return new Date(timestamp).toLocaleTimeString([], {
@@ -256,7 +257,7 @@ export function Header() {
                       <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-red-500 ring-2 ring-neutral-900" />
                     )}
                   </button>
-                  {saveDirectoryPath && (
+                  {saveDirectoryPath && !managedProjectSelected && (
                     <button
                       onClick={handleOpenDirectory}
                       className="p-1.5 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 rounded transition-colors"

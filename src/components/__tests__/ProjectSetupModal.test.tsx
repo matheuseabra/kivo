@@ -184,7 +184,7 @@ describe("ProjectSetupModal", () => {
   });
 
   describe("Project Tab - New Mode", () => {
-    it("should render empty form for new project", () => {
+    it("should render empty form for new project", async () => {
       render(
         <ProjectSetupModal
           isOpen={true}
@@ -195,7 +195,7 @@ describe("ProjectSetupModal", () => {
       );
 
       const nameInput = screen.getByPlaceholderText("my-project") as HTMLInputElement;
-      const directoryInput = screen.getByPlaceholderText("/Users/username/projects/my-project") as HTMLInputElement;
+      const directoryInput = await screen.findByPlaceholderText("/Users/username/projects/my-project") as HTMLInputElement;
 
       expect(nameInput.value).toBe("");
       expect(directoryInput.value).toBe("");
@@ -214,7 +214,7 @@ describe("ProjectSetupModal", () => {
       expect(screen.getByText("Create")).toBeInTheDocument();
     });
 
-    it("should render project name and directory inputs", () => {
+    it("should render project name and directory inputs", async () => {
       render(
         <ProjectSetupModal
           isOpen={true}
@@ -225,10 +225,10 @@ describe("ProjectSetupModal", () => {
       );
 
       expect(screen.getByText("Project Name")).toBeInTheDocument();
-      expect(screen.getByText("Project Directory")).toBeInTheDocument();
+      expect(await screen.findByText("Project Directory")).toBeInTheDocument();
     });
 
-    it("should render Browse button for directory selection", () => {
+    it("should render Browse button for directory selection", async () => {
       render(
         <ProjectSetupModal
           isOpen={true}
@@ -238,7 +238,7 @@ describe("ProjectSetupModal", () => {
         />
       );
 
-      expect(screen.getByText("Browse")).toBeInTheDocument();
+      expect(await screen.findByText("Browse")).toBeInTheDocument();
     });
 
     it("should render embed images checkbox", () => {
@@ -256,7 +256,7 @@ describe("ProjectSetupModal", () => {
   });
 
   describe("Project Tab - Settings Mode", () => {
-    it("should pre-fill form with existing values in settings mode", () => {
+    it("should pre-fill form with existing values in settings mode", async () => {
       mockUseWorkflowStore.mockImplementation((selector) => {
         return selector(createDefaultState({
           workflowName: "My Existing Project",
@@ -275,7 +275,7 @@ describe("ProjectSetupModal", () => {
       );
 
       const nameInput = screen.getByPlaceholderText("my-project") as HTMLInputElement;
-      const directoryInput = screen.getByPlaceholderText("/Users/username/projects/my-project") as HTMLInputElement;
+      const directoryInput = await screen.findByPlaceholderText("/Users/username/projects/my-project") as HTMLInputElement;
 
       expect(nameInput.value).toBe("My Existing Project");
       expect(directoryInput.value).toBe("/path/to/project");
@@ -316,7 +316,7 @@ describe("ProjectSetupModal", () => {
       );
 
       // Fill directory but not name
-      const directoryInput = screen.getByPlaceholderText("/Users/username/projects/my-project");
+      const directoryInput = await screen.findByPlaceholderText("/Users/username/projects/my-project");
       fireEvent.change(directoryInput, { target: { value: "/path/to/project" } });
 
       // Click Create
@@ -342,6 +342,7 @@ describe("ProjectSetupModal", () => {
 
       // Fill name but not directory
       const nameInput = screen.getByPlaceholderText("my-project");
+      await screen.findByPlaceholderText("/Users/username/projects/my-project");
       fireEvent.change(nameInput, { target: { value: "My Project" } });
 
       // Click Create
@@ -385,7 +386,7 @@ describe("ProjectSetupModal", () => {
       fireEvent.change(screen.getByPlaceholderText("my-project"), {
         target: { value: "My Project" },
       });
-      fireEvent.change(screen.getByPlaceholderText("/Users/username/projects/my-project"), {
+      fireEvent.change(await screen.findByPlaceholderText("/Users/username/projects/my-project"), {
         target: { value: "/nonexistent/path" },
       });
 
@@ -417,7 +418,7 @@ describe("ProjectSetupModal", () => {
       fireEvent.change(screen.getByPlaceholderText("my-project"), {
         target: { value: "My Project" },
       });
-      fireEvent.change(screen.getByPlaceholderText("/Users/username/projects/my-project"), {
+      fireEvent.change(await screen.findByPlaceholderText("/Users/username/projects/my-project"), {
         target: { value: "AT-ALGKG9VR/Users/guy/Desktop/AI Project" },
       });
 
@@ -468,7 +469,7 @@ describe("ProjectSetupModal", () => {
       fireEvent.change(screen.getByPlaceholderText("my-project"), {
         target: { value: "My Project" },
       });
-      fireEvent.change(screen.getByPlaceholderText("/Users/username/projects/my-project"), {
+      fireEvent.change(await screen.findByPlaceholderText("/Users/username/projects/my-project"), {
         target: { value: "/path/to/file.txt" },
       });
 
@@ -515,7 +516,7 @@ describe("ProjectSetupModal", () => {
       fireEvent.change(screen.getByPlaceholderText("my-project"), {
         target: { value: "My New Project" },
       });
-      fireEvent.change(screen.getByPlaceholderText("/Users/username/projects/my-project"), {
+      fireEvent.change(await screen.findByPlaceholderText("/Users/username/projects/my-project"), {
         target: { value: "/path/to/project" },
       });
 
@@ -561,7 +562,7 @@ describe("ProjectSetupModal", () => {
       fireEvent.change(screen.getByPlaceholderText("my-project"), {
         target: { value: "My Project" },
       });
-      fireEvent.change(screen.getByPlaceholderText("/Users/username/projects/my-project"), {
+      fireEvent.change(await screen.findByPlaceholderText("/Users/username/projects/my-project"), {
         target: { value: "/path/to/project" },
       });
 
@@ -607,7 +608,7 @@ describe("ProjectSetupModal", () => {
       fireEvent.change(screen.getByPlaceholderText("my-project"), {
         target: { value: "My Project" },
       });
-      fireEvent.change(screen.getByPlaceholderText("/Users/username/projects/my-project"), {
+      fireEvent.change(await screen.findByPlaceholderText("/Users/username/projects/my-project"), {
         target: { value: "/path/to/project" },
       });
 
@@ -651,7 +652,7 @@ describe("ProjectSetupModal", () => {
         />
       );
 
-      fireEvent.click(screen.getByText("Browse"));
+      fireEvent.click(await screen.findByText("Browse"));
 
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledWith("/api/browse-directory");
@@ -684,7 +685,7 @@ describe("ProjectSetupModal", () => {
         />
       );
 
-      fireEvent.click(screen.getByText("Browse"));
+      fireEvent.click(await screen.findByText("Browse"));
 
       await waitFor(() => {
         const directoryInput = screen.getByPlaceholderText("/Users/username/projects/my-project") as HTMLInputElement;
@@ -718,7 +719,7 @@ describe("ProjectSetupModal", () => {
         />
       );
 
-      fireEvent.click(screen.getByText("Browse"));
+      fireEvent.click(await screen.findByText("Browse"));
 
       await waitFor(() => {
         const directoryInput = screen.getByPlaceholderText("/Users/username/projects/my-project") as HTMLInputElement;
@@ -752,7 +753,7 @@ describe("ProjectSetupModal", () => {
         />
       );
 
-      fireEvent.click(screen.getByText("Browse"));
+      fireEvent.click(await screen.findByText("Browse"));
 
       expect(screen.getByText("...")).toBeInTheDocument();
 
@@ -789,10 +790,10 @@ describe("ProjectSetupModal", () => {
       );
 
       // Pre-fill directory
-      const directoryInput = screen.getByPlaceholderText("/Users/username/projects/my-project") as HTMLInputElement;
+      const directoryInput = await screen.findByPlaceholderText("/Users/username/projects/my-project") as HTMLInputElement;
       fireEvent.change(directoryInput, { target: { value: "/original/path" } });
 
-      fireEvent.click(screen.getByText("Browse"));
+      fireEvent.click(await screen.findByText("Browse"));
 
       await waitFor(() => {
         // Should keep original value when cancelled
@@ -838,7 +839,7 @@ describe("ProjectSetupModal", () => {
         target: { value: "Foo" },
       });
 
-      fireEvent.click(screen.getByText("Browse"));
+      fireEvent.click(await screen.findByText("Browse"));
 
       await waitFor(() => {
         const directoryInput = screen.getByPlaceholderText("/Users/username/projects/my-project") as HTMLInputElement;
@@ -931,7 +932,7 @@ describe("ProjectSetupModal", () => {
       fireEvent.change(screen.getByPlaceholderText("my-project"), {
         target: { value: "My Project" },
       });
-      fireEvent.change(screen.getByPlaceholderText("/Users/username/projects/my-project"), {
+      fireEvent.change(await screen.findByPlaceholderText("/Users/username/projects/my-project"), {
         target: { value: "/path/to/project" },
       });
 
@@ -1087,6 +1088,75 @@ describe("ProjectSetupModal", () => {
       fireEvent.click(screen.getByText("Save"));
 
       expect(onClose).toHaveBeenCalled();
+    });
+  });
+
+  describe("Hosted managed storage", () => {
+    const configureHostedFetch = (projects = [{ id: "managed-project-id", name: "Hosted Demo", updatedAt: 1 }]) => {
+      mockFetch.mockImplementation((url: string, options?: RequestInit) => {
+        if (url === "/api/capabilities") {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ hosted: true, managedStorage: true, configured: true }),
+          });
+        }
+        if (url === "/api/projects" && options?.method === "POST") {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ success: true, project: { id: "created-project-id", name: "New Hosted", updatedAt: 2 } }),
+          });
+        }
+        if (url === "/api/projects") {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ success: true, projects }),
+          });
+        }
+        if (url === "/api/env-status") {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ success: true }) });
+      });
+    };
+
+    it("creates a project and stores only its opaque ID", async () => {
+      configureHostedFetch();
+      const onSave = vi.fn();
+      render(
+        <ProjectSetupModal isOpen onClose={vi.fn()} onSave={onSave} mode="new" />
+      );
+
+      fireEvent.change(screen.getByPlaceholderText("my-project"), { target: { value: "New Hosted" } });
+      fireEvent.click(await screen.findByText("Create"));
+
+      await waitFor(() => {
+        expect(onSave).toHaveBeenCalledWith("mock-workflow-id", "New Hosted", "created-project-id");
+      });
+      expect(mockFetch).toHaveBeenCalledWith("/api/projects", expect.objectContaining({ method: "POST" }));
+      expect(screen.queryByText("Browse")).not.toBeInTheDocument();
+    });
+
+    it("selects an existing managed project in settings", async () => {
+      configureHostedFetch();
+      mockUseWorkflowStore.mockImplementation((selector) => selector(createDefaultState({
+        workflowId: "existing-workflow-id",
+        workflowName: "Old name",
+        saveDirectoryPath: "managed-project-id",
+      })));
+      const onSave = vi.fn();
+      render(
+        <ProjectSetupModal isOpen onClose={vi.fn()} onSave={onSave} mode="settings" />
+      );
+
+      const projectSelect = await screen.findByRole("combobox", { name: "Managed Project" });
+      await screen.findByRole("option", { name: "Hosted Demo" });
+      fireEvent.change(projectSelect, { target: { value: "managed-project-id" } });
+      fireEvent.click(screen.getByText("Save"));
+
+      await waitFor(() => {
+        expect(onSave).toHaveBeenCalledWith("existing-workflow-id", "Hosted Demo", "managed-project-id");
+      });
+      expect(screen.queryByText("Browse")).not.toBeInTheDocument();
     });
   });
 });

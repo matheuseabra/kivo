@@ -10,6 +10,12 @@ import { loadNodeDefaults, saveNodeDefaults, getLastProjectBaseDir, setLastProje
 import { ProviderModel } from "@/lib/providers/types";
 import { ModelSearchDialog } from "@/components/modals/ModelSearchDialog";
 import { useInlineParameters } from "@/hooks/useInlineParameters";
+import {
+  createManagedProject,
+  fetchManagedProjects,
+  fetchStorageCapabilities,
+  ManagedProject,
+} from "@/lib/client/storageCapabilities";
 
 // LLM provider and model options (mirrored from LLMGenerateNode)
 const LLM_PROVIDERS: { value: LLMProvider; label: string }[] = [
@@ -129,6 +135,7 @@ export function ProjectSetupModal({
   };
 
   const {
+    workflowId,
     workflowName,
     saveDirectoryPath,
     useExternalImageStorage,
@@ -155,6 +162,36 @@ export function ProjectSetupModal({
   const [isValidating, setIsValidating] = useState(false);
   const [isBrowsing, setIsBrowsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [storageMode, setStorageMode] = useState<"loading" | "hosted" | "local" | "error">("loading");
+  const [managedProjects, setManagedProjects] = useState<ManagedProject[]>([]);
+  const hostedStorage = storageMode === "hosted";
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+    setStorageMode("loading");
+    fetchStorageCapabilities()
+      .then(async (capabilities) => {
+        if (!active) return;
+        if (!capabilities.hosted) {
+          setStorageMode("local");
+          return;
+        }
+        if (!capabilities.configured) {
+          setStorageMode("error");
+          setError("Hosted storage is not configured. Ask the administrator to set KIVO_DATA_DIR.");
+          return;
+        }
+        setStorageMode("hosted");
+        setManagedProjects(await fetchManagedProjects());
+      })
+      .catch((cause: unknown) => {
+        if (!active) return;
+        setStorageMode("error");
+        setError(cause instanceof Error ? cause.message : "Could not load project storage");
+      });
+    return () => { active = false; };
+  }, [isOpen]);
 
   // Provider tab state
   const [localProviders, setLocalProviders] = useState<ProviderSettings>(providerSettings);
@@ -264,12 +301,29 @@ export function ProjectSetupModal({
     }
   };
 
-  const handleSaveProject = async () => {
-    if (!name.trim()) {
-      setError("Project name is required");
-      return;
+  const saveManagedProject = async () => {
+    setIsValidating(true);
+    setError(null);
+    try {
+      const project = mode === "new"
+        ? await createManagedProject(name)
+        : managedProjects.find((item) => item.id === directoryPath);
+      if (!project) {
+        setError("Choose an existing managed project");
+        return;
+      }
+      if (mode === "new") setManagedProjects((items) => [project, ...items]);
+      const id = mode === "new" ? generateWorkflowId() : workflowId || generateWorkflowId();
+      setUseExternalImageStorage(externalStorage);
+      onSave(id, project.name, project.id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save managed project");
+    } finally {
+      setIsValidating(false);
     }
+  };
 
+  const saveLocalProject = async () => {
     if (!directoryPath.trim()) {
       setError("Project directory is required");
       return;
@@ -298,7 +352,7 @@ export function ProjectSetupModal({
         return;
       }
 
-      const id = mode === "new" ? generateWorkflowId() : useWorkflowStore.getState().workflowId || generateWorkflowId();
+      const id = mode === "new" ? generateWorkflowId() : workflowId || generateWorkflowId();
       // Update external storage setting
       setUseExternalImageStorage(externalStorage);
       // Remember the base directory for next time
@@ -311,6 +365,19 @@ export function ProjectSetupModal({
       );
       setIsValidating(false);
     }
+  };
+
+  const handleSaveProject = async () => {
+    if (!name.trim()) {
+      setError("Project name is required");
+      return;
+    }
+    if (storageMode === "loading" || storageMode === "error") {
+      setError("Project storage is not ready yet");
+      return;
+    }
+    if (hostedStorage) return saveManagedProject();
+    return saveLocalProject();
   };
 
   const handleSaveProviders = () => {
@@ -446,37 +513,72 @@ export function ProjectSetupModal({
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                readOnly={hostedStorage && mode === "settings"}
                 placeholder="my-project"
                 autoFocus
-                className="w-full px-3 py-2 bg-neutral-900 border border-neutral-600 rounded-lg text-neutral-100 text-sm focus:outline-none focus:border-neutral-500"
+                className="w-full px-3 py-2 bg-neutral-900 border border-neutral-600 rounded-lg text-neutral-100 text-sm focus:outline-none focus:border-neutral-500 read-only:opacity-70"
               />
             </div>
 
-            <div>
-              <label className="block text-sm text-neutral-400 mb-1">
-                Project Directory
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={directoryPath}
-                  onChange={(e) => setDirectoryPath(e.target.value)}
-                  placeholder="/Users/username/projects/my-project"
-                  className="flex-1 px-3 py-2 bg-neutral-900 border border-neutral-600 rounded-lg text-neutral-100 text-sm focus:outline-none focus:border-neutral-500"
-                />
-                <button
-                  type="button"
-                  onClick={handleBrowse}
-                  disabled={isBrowsing}
-                  className="px-3 py-2 bg-neutral-700 hover:bg-neutral-600 disabled:bg-neutral-700 disabled:opacity-50 text-neutral-200 text-sm rounded-lg transition-colors"
-                >
-                  {isBrowsing ? "..." : "Browse"}
-                </button>
+            {storageMode === "loading" ? (
+              <p className="text-sm text-neutral-400">Loading project storage…</p>
+            ) : hostedStorage ? (
+              <div>
+                <label className="block text-sm text-neutral-400 mb-1">
+                  {mode === "new" ? "Project Storage" : "Managed Project"}
+                </label>
+                {mode === "new" ? (
+                  <p className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-3 text-sm text-neutral-300">
+                    Project files and generated media will be saved in this server’s managed storage.
+                  </p>
+                ) : (
+                  <select
+                    aria-label="Managed Project"
+                    value={directoryPath}
+                    onChange={(event) => {
+                      setDirectoryPath(event.target.value);
+                      const project = managedProjects.find((item) => item.id === event.target.value);
+                      if (project) setName(project.name);
+                    }}
+                    className="w-full px-3 py-2 bg-neutral-900 border border-neutral-600 rounded-lg text-neutral-100 text-sm focus:outline-none focus:border-neutral-500"
+                  >
+                    <option value="">Select a managed project</option>
+                    {managedProjects.map((project) => (
+                      <option key={project.id} value={project.id}>{project.name}</option>
+                    ))}
+                  </select>
+                )}
+                <p className="text-xs text-neutral-400 mt-1">
+                  Project files stay on this Kivo server. The storage location is managed by the server.
+                </p>
               </div>
-              <p className="text-xs text-neutral-400 mt-1">
-                Workflow files and images will be saved here. Subfolders for inputs and generations will be auto-created.
-              </p>
-            </div>
+            ) : storageMode === "local" ? (
+              <div>
+                <label className="block text-sm text-neutral-400 mb-1">
+                  Project Directory
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={directoryPath}
+                    onChange={(e) => setDirectoryPath(e.target.value)}
+                    placeholder="/Users/username/projects/my-project"
+                    className="flex-1 px-3 py-2 bg-neutral-900 border border-neutral-600 rounded-lg text-neutral-100 text-sm focus:outline-none focus:border-neutral-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleBrowse}
+                    disabled={isBrowsing}
+                    className="px-3 py-2 bg-neutral-700 hover:bg-neutral-600 disabled:bg-neutral-700 disabled:opacity-50 text-neutral-200 text-sm rounded-lg transition-colors"
+                  >
+                    {isBrowsing ? "..." : "Browse"}
+                  </button>
+                </div>
+                <p className="text-xs text-neutral-400 mt-1">
+                  Workflow files and images will be saved here. Subfolders for inputs and generations will be auto-created.
+                </p>
+              </div>
+            ) : <p className="text-sm text-red-400">Project storage could not be loaded.</p>}
 
             <div className="pt-2 border-t border-neutral-700">
               <label className="flex items-center justify-between gap-3 cursor-pointer">

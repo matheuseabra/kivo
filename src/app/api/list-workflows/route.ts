@@ -3,6 +3,15 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { validateWorkflowPath } from "@/utils/pathValidation";
 import { isVercelEnvironment, unsupportedOnVercelResponse } from "@/utils/vercelEnvironment";
+import {
+  getManagedProjectDirectory,
+  isHostedStorageMode,
+  listManagedProjects,
+  readManagedProjectEntries,
+  resolveManagedProjectPath,
+  toHostedStorageError,
+  validateProjectId,
+} from "@/lib/hostedStorage";
 
 const MAX_DEPTH = 3;
 const SKIP_DIRS = new Set([".git", "node_modules", "__pycache__", ".next"]);
@@ -101,9 +110,65 @@ async function probeWorkflow(
   return null;
 }
 
+async function probeManagedWorkflow(projectId: string, projectName: string): Promise<WorkflowListEntry | null> {
+  try {
+    const projectPath = await getManagedProjectDirectory(projectId);
+    const files = await readManagedProjectEntries(projectId);
+    for (const file of files) {
+      if (!file.isFile() || !file.name.endsWith(".json") || file.name === ".project.json") continue;
+      const filePath = await resolveManagedProjectPath(projectId, file.name);
+      const handle = await fs.open(filePath, "r");
+      try {
+        const buffer = Buffer.alloc(HEAD_BYTES);
+        const { bytesRead } = await handle.read(buffer, 0, HEAD_BYTES, 0);
+        const head = buffer.toString("utf-8", 0, bytesRead);
+        if (!head.includes('"version"') || !head.includes('"nodes"')) continue;
+        const nameMatch = head.match(/"name"\s*:\s*"((?:\\.|[^"\\])*)"/);
+        const stat = await fs.stat(filePath);
+        return {
+          name: nameMatch ? nameMatch[1].replace(/\\"/g, '"').replace(/\\\\/g, "\\") : projectName,
+          directoryPath: projectId,
+          relativePath: projectName,
+          lastModified: stat.mtimeMs,
+        };
+      } finally {
+        await handle.close();
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+async function listManagedWorkflows(projectId?: string) {
+  const projects = await listManagedProjects();
+  const selected = projectId ? projects.filter((project) => project.id === projectId) : projects;
+  if (projectId && selected.length === 0) {
+    await getManagedProjectDirectory(projectId);
+  }
+  const results = await Promise.all(selected.map((project) => probeManagedWorkflow(project.id, project.name)));
+  return results.filter((result): result is WorkflowListEntry => result !== null)
+    .sort((a, b) => b.lastModified - a.lastModified);
+}
+
 export async function GET(request: NextRequest) {
   if (isVercelEnvironment()) {
     return unsupportedOnVercelResponse("Listing local workflow folders");
+  }
+
+  if (isHostedStorageMode()) {
+    const projectId = request.nextUrl.searchParams.get("path") || undefined;
+    if (projectId && !validateProjectId(projectId)) {
+      return NextResponse.json({ success: false, error: "Invalid project ID" }, { status: 400 });
+    }
+    try {
+      const workflows = await listManagedWorkflows(projectId);
+      return NextResponse.json({ success: true, workflows });
+    } catch (error) {
+      const storageError = toHostedStorageError(error);
+      return NextResponse.json({ success: false, error: storageError.message }, { status: storageError.status });
+    }
   }
 
   const parentPath = request.nextUrl.searchParams.get("path");

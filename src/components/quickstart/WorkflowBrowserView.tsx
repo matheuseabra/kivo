@@ -7,6 +7,7 @@ import {
   getWorkflowsDirectory,
   setWorkflowsDirectory,
 } from "@/store/utils/localStorage";
+import { fetchStorageCapabilities } from "@/lib/client/storageCapabilities";
 
 interface WorkflowListEntry {
   name: string;
@@ -48,18 +49,43 @@ export function WorkflowBrowserView({
   const [isLoading, setIsLoading] = useState(false);
   const [loadingWorkflow, setLoadingWorkflow] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [storageMode, setStorageMode] = useState<"loading" | "hosted" | "local" | "error">("loading");
+  const hostedStorage = storageMode === "hosted";
 
   useEffect(() => {
-    setDefaultDir(getWorkflowsDirectory());
+    let active = true;
+    fetchStorageCapabilities()
+      .then((capabilities) => {
+        if (!active) return;
+        if (capabilities.hosted) {
+          if (!capabilities.configured) {
+            setStorageMode("error");
+            setError("Hosted storage is not configured.");
+            return;
+          }
+          setStorageMode("hosted");
+          setDefaultDir("managed");
+        } else {
+          setStorageMode("local");
+          setDefaultDir(getWorkflowsDirectory());
+        }
+      })
+      .catch(() => {
+        if (!active) return;
+        setStorageMode("error");
+        setError("Could not load project storage");
+      });
+    return () => { active = false; };
   }, []);
 
   const fetchWorkflows = useCallback(async (dirPath: string) => {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch(
-        `/api/list-workflows?path=${encodeURIComponent(dirPath)}`
-      );
+      const url = hostedStorage
+        ? "/api/list-workflows"
+        : `/api/list-workflows?path=${encodeURIComponent(dirPath)}`;
+      const res = await fetch(url);
       const result = await res.json();
       if (result.success) {
         setWorkflows(result.workflows);
@@ -74,7 +100,7 @@ export function WorkflowBrowserView({
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [hostedStorage]);
 
   useEffect(() => {
     if (defaultDir) {
@@ -83,6 +109,7 @@ export function WorkflowBrowserView({
   }, [defaultDir, fetchWorkflows]);
 
   const browseAndSetDir = useCallback(async () => {
+    if (hostedStorage) return;
     try {
       const res = await fetch("/api/browse-directory");
       const result = await res.json();
@@ -93,9 +120,10 @@ export function WorkflowBrowserView({
     } catch {
       setError("Failed to open directory picker");
     }
-  }, []);
+  }, [hostedStorage]);
 
   const handleBrowseOther = useCallback(async () => {
+    if (hostedStorage) return;
     try {
       const browseRes = await fetch("/api/browse-directory");
       const browseResult = await browseRes.json();
@@ -131,7 +159,7 @@ export function WorkflowBrowserView({
       setLoadingWorkflow(null);
       setError("Failed to open workflow");
     }
-  }, [onWorkflowLoaded, onClose]);
+  }, [hostedStorage, onWorkflowLoaded, onClose]);
 
   const handleSelectWorkflow = useCallback(
     async (entry: WorkflowListEntry) => {
@@ -162,8 +190,16 @@ export function WorkflowBrowserView({
     [onWorkflowLoaded, onClose]
   );
 
+  if (storageMode === "loading") {
+    return <div className="p-8 text-center text-sm text-neutral-400">Loading projects…</div>;
+  }
+
+  if (storageMode === "error") {
+    return <div className="p-8 text-center text-sm text-red-400">{error || "Could not load project storage"}</div>;
+  }
+
   // State A: No default directory configured
-  if (defaultDir === null) {
+  if (defaultDir === null && !hostedStorage) {
     return (
       <div className="p-8 flex flex-col items-center">
         {onBack && (
@@ -226,9 +262,9 @@ export function WorkflowBrowserView({
         </div>
         <p
           className="text-xs text-neutral-500 truncate mt-0.5"
-          title={defaultDir}
+          title={hostedStorage ? undefined : defaultDir || undefined}
         >
-          {defaultDir}
+          {hostedStorage ? "Projects saved in managed server storage" : defaultDir}
         </p>
       </div>
 
@@ -329,23 +365,29 @@ export function WorkflowBrowserView({
 
       {/* Footer */}
       <div className="px-6 py-3 border-t border-neutral-700/50 flex-shrink-0 flex items-center justify-between">
-        <button
-          onClick={handleBrowseOther}
-          disabled={loadingWorkflow !== null}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-300 bg-neutral-700/50 hover:bg-neutral-700 border border-neutral-600/50 hover:border-neutral-600 rounded-md transition-colors disabled:opacity-50"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
-          </svg>
-          Open from directory
-        </button>
-        <button
-          onClick={browseAndSetDir}
-          disabled={loadingWorkflow !== null}
-          className="text-xs text-neutral-500 hover:text-neutral-300 transition-colors disabled:opacity-50"
-        >
-          Change folder
-        </button>
+        {hostedStorage ? (
+          <span className="text-xs text-neutral-500">Create a project from New Project</span>
+        ) : (
+          <>
+            <button
+              onClick={handleBrowseOther}
+              disabled={loadingWorkflow !== null}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-300 bg-neutral-700/50 hover:bg-neutral-700 border border-neutral-600/50 hover:border-neutral-600 rounded-md transition-colors disabled:opacity-50"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 012.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+              </svg>
+              Open from directory
+            </button>
+            <button
+              onClick={browseAndSetDir}
+              disabled={loadingWorkflow !== null}
+              className="text-xs text-neutral-500 hover:text-neutral-300 transition-colors disabled:opacity-50"
+            >
+              Change folder
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
