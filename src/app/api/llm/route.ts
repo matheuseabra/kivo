@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { LLMGenerateRequest, LLMGenerateResponse, LLMModelType } from "@/types";
 import { logger } from "@/utils/logger";
+import { isHostedMode, resolveProviderApiKey } from "@/lib/server/hosted-access";
+import { withApiRequestGuard } from "@/lib/server/request-guards";
 
 export const maxDuration = 60; // 1 minute timeout
+
+class MissingProviderApiKeyError extends Error {}
 
 // Generate a unique request ID for tracking
 function generateRequestId(): string {
@@ -38,11 +42,10 @@ async function generateWithGoogle(
   requestId?: string,
   userApiKey?: string | null
 ): Promise<string> {
-  // User-provided key takes precedence over env variable
-  const apiKey = userApiKey || process.env.GEMINI_API_KEY;
+  const apiKey = userApiKey;
   if (!apiKey) {
     logger.error('api.error', 'GEMINI_API_KEY not configured', { requestId });
-    throw new Error("GEMINI_API_KEY not configured. Add it to .env.local or configure in Settings.");
+    throw new MissingProviderApiKeyError("GEMINI_API_KEY not configured. Add it to .env.local or configure in Settings.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
@@ -122,11 +125,10 @@ async function generateWithOpenAI(
   requestId?: string,
   userApiKey?: string | null
 ): Promise<string> {
-  // User-provided key takes precedence over env variable
-  const apiKey = userApiKey || process.env.OPENAI_API_KEY;
+  const apiKey = userApiKey;
   if (!apiKey) {
     logger.error('api.error', 'OPENAI_API_KEY not configured', { requestId });
-    throw new Error("OPENAI_API_KEY not configured. Add it to .env.local or configure in Settings.");
+    throw new MissingProviderApiKeyError("OPENAI_API_KEY not configured. Add it to .env.local or configure in Settings.");
   }
 
   const modelId = OPENAI_MODEL_MAP[model];
@@ -206,10 +208,10 @@ async function generateWithAnthropic(
   requestId?: string,
   userApiKey?: string | null
 ): Promise<string> {
-  const apiKey = userApiKey || process.env.ANTHROPIC_API_KEY;
+  const apiKey = userApiKey;
   if (!apiKey) {
     logger.error('api.error', 'ANTHROPIC_API_KEY not configured', { requestId });
-    throw new Error("ANTHROPIC_API_KEY not configured. Add it to .env.local or configure in Settings.");
+    throw new MissingProviderApiKeyError("ANTHROPIC_API_KEY not configured. Add it to .env.local or configure in Settings.");
   }
 
   const modelId = ANTHROPIC_MODEL_MAP[model];
@@ -289,14 +291,24 @@ async function generateWithAnthropic(
   return text;
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest): Promise<Response> {
+  return withApiRequestGuard(request, {
+    bucket: "llm",
+    maxRequests: 30,
+    windowMs: 60_000,
+    maxConcurrent: 3,
+    bodyLimitBytes: 16 * 1024 * 1024,
+  }, handlePost);
+}
+
+async function handlePost(request: NextRequest) {
   const requestId = generateRequestId();
 
   try {
     // Get user-provided API keys from headers (override env variables)
-    const geminiApiKey = request.headers.get("X-Gemini-API-Key");
-    const openaiApiKey = request.headers.get("X-OpenAI-API-Key");
-    const anthropicApiKey = request.headers.get("X-Anthropic-API-Key");
+    const geminiApiKey = resolveProviderApiKey(request, "gemini");
+    const openaiApiKey = resolveProviderApiKey(request, "openai");
+    const anthropicApiKey = resolveProviderApiKey(request, "anthropic");
 
     const body: LLMGenerateRequest = await request.json();
     const {
@@ -354,6 +366,13 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     logger.error('api.error', 'LLM generation error', { requestId }, error instanceof Error ? error : undefined);
+
+    if (error instanceof MissingProviderApiKeyError) {
+      return NextResponse.json<LLMGenerateResponse>(
+        { success: false, error: error.message },
+        { status: isHostedMode() ? 401 : 500 }
+      );
+    }
 
     // Handle rate limiting
     if (error instanceof Error && error.message.includes("429")) {

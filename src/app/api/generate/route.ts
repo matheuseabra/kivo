@@ -18,6 +18,8 @@ import { generateWithReplicate } from "./providers/replicate";
 import { clearFalInputMappingCache as _clearFalInputMappingCache, generateWithFalQueue } from "./providers/fal";
 import { submitKieTask } from "./providers/kie";
 import { generateWithWaveSpeed } from "./providers/wavespeed";
+import { isHostedMode, resolveProviderApiKey } from "@/lib/server/hosted-access";
+import { withApiRequestGuard } from "@/lib/server/request-guards";
 
 // Re-export for backward compatibility (test file imports from route)
 export const clearFalInputMappingCache = _clearFalInputMappingCache;
@@ -82,7 +84,17 @@ function capabilitiesForMediaType(mediaType?: string): ModelCapability[] {
   return map[mediaType ?? ""] ?? ["text-to-image"];
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest): Promise<Response> {
+  return withApiRequestGuard(request, {
+    bucket: "generate",
+    maxRequests: 20,
+    windowMs: 60_000,
+    maxConcurrent: 2,
+    bodyLimitBytes: 32 * 1024 * 1024,
+  }, handlePost);
+}
+
+async function handlePost(request: NextRequest) {
   const requestId = Math.random().toString(36).substring(7);
   console.log(`\n[API:${requestId}] ========== NEW GENERATE REQUEST ==========`);
 
@@ -140,7 +152,7 @@ export async function POST(request: NextRequest) {
       }
 
       // User-provided key takes precedence over env variable
-      const replicateApiKey = request.headers.get("X-Replicate-API-Key") || process.env.REPLICATE_API_KEY;
+      const replicateApiKey = resolveProviderApiKey(request, "replicate");
       if (!replicateApiKey) {
         return NextResponse.json<GenerateResponse>(
           {
@@ -220,9 +232,15 @@ export async function POST(request: NextRequest) {
       }
 
       // User-provided key takes precedence over env variable
-      const falApiKey = request.headers.get("X-Fal-API-Key") || process.env.FAL_API_KEY || null;
+      const falApiKey = resolveProviderApiKey(request, "fal");
 
       if (!falApiKey) {
+        if (isHostedMode()) {
+          return NextResponse.json<GenerateResponse>(
+            { success: false, error: "fal.ai API key required. Configure it in Settings." },
+            { status: 401 }
+          );
+        }
         console.warn(`[API:${requestId}] No FAL API key configured. Proceeding without auth (rate-limited).`);
       }
 
@@ -295,7 +313,7 @@ export async function POST(request: NextRequest) {
       }
 
       // User-provided key takes precedence over env variable
-      const kieApiKey = request.headers.get("X-Kie-Key") || process.env.KIE_API_KEY;
+      const kieApiKey = resolveProviderApiKey(request, "kie");
       if (!kieApiKey) {
         return NextResponse.json<GenerateResponse>(
           {
@@ -373,7 +391,7 @@ export async function POST(request: NextRequest) {
       }
 
       // User-provided key takes precedence over env variable
-      const wavespeedApiKey = request.headers.get("X-WaveSpeed-Key") || process.env.WAVESPEED_API_KEY;
+      const wavespeedApiKey = resolveProviderApiKey(request, "wavespeed");
       if (!wavespeedApiKey) {
         return NextResponse.json<GenerateResponse>(
           {
@@ -445,7 +463,7 @@ export async function POST(request: NextRequest) {
 
     // Default: Use Gemini
     // User-provided key (from settings) takes precedence over env variable
-    const geminiApiKey = request.headers.get("X-Gemini-API-Key") || process.env.GEMINI_API_KEY;
+    const geminiApiKey = resolveProviderApiKey(request, "gemini");
 
     if (!geminiApiKey) {
       return NextResponse.json<GenerateResponse>(

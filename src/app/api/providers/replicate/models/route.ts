@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ProviderModel, ModelCapability } from "@/lib/providers";
+import { resolveProviderApiKey } from "@/lib/server/hosted-access";
+import { withApiRequestGuard } from "@/lib/server/request-guards";
 
 const REPLICATE_API_BASE = "https://api.replicate.com/v1";
 
@@ -107,25 +109,30 @@ type ModelsResponse = ModelsSuccessResponse | ModelsErrorResponse;
  * GET /api/providers/replicate/models
  *
  * Fetches available models from Replicate API.
- * Requires API key in X-API-Key header or api_key query param.
+ * Requires a provider API key header.
  *
  * Query params:
  *   - search: Optional search query to filter models
- *   - api_key: Alternative to X-API-Key header
  */
 export async function GET(
   request: NextRequest
-): Promise<NextResponse<ModelsResponse>> {
-  // Get API key from header or query param
-  const apiKey =
-    request.headers.get("X-API-Key") ||
-    request.nextUrl.searchParams.get("api_key");
+): Promise<Response> {
+  return withApiRequestGuard(request, {
+    bucket: "replicate-provider-models",
+    maxRequests: 60,
+    windowMs: 60_000,
+    maxConcurrent: 4,
+  }, handleGet);
+}
+
+async function handleGet(request: NextRequest): Promise<NextResponse<ModelsResponse>> {
+  const apiKey = resolveProviderApiKey(request, "replicate");
 
   if (!apiKey) {
     return NextResponse.json<ModelsErrorResponse>(
       {
         success: false,
-        error: "API key required. Provide X-API-Key header or api_key query param.",
+        error: "API key required. Provide X-API-Key header.",
       },
       { status: 401 }
     );

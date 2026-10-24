@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isHostedMode } from "@/lib/server/hosted-access";
 
 export interface EnvStatusResponse {
   gemini: boolean;
@@ -11,15 +12,15 @@ export interface EnvStatusResponse {
 }
 
 export async function GET() {
-  // Check which API keys are configured via environment variables
+  const allowEnvironmentAvailability = !isHostedMode();
   const status: EnvStatusResponse = {
-    gemini: !!process.env.GEMINI_API_KEY,
-    openai: !!process.env.OPENAI_API_KEY,
-    anthropic: !!process.env.ANTHROPIC_API_KEY,
-    replicate: !!process.env.REPLICATE_API_KEY,
-    fal: !!process.env.FAL_API_KEY,
-    kie: !!process.env.KIE_API_KEY,
-    wavespeed: !!process.env.WAVESPEED_API_KEY,
+    gemini: allowEnvironmentAvailability && !!process.env.GEMINI_API_KEY,
+    openai: allowEnvironmentAvailability && !!process.env.OPENAI_API_KEY,
+    anthropic: allowEnvironmentAvailability && !!process.env.ANTHROPIC_API_KEY,
+    replicate: allowEnvironmentAvailability && !!process.env.REPLICATE_API_KEY,
+    fal: allowEnvironmentAvailability && !!process.env.FAL_API_KEY,
+    kie: allowEnvironmentAvailability && !!process.env.KIE_API_KEY,
+    wavespeed: allowEnvironmentAvailability && !!process.env.WAVESPEED_API_KEY,
   };
 
   return NextResponse.json(status);
