@@ -2,6 +2,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { generateWithReplicate } from "../replicate";
 import type { GenerationInput } from "@/lib/providers/types";
 
+const mockSafeFetchMedia = vi.hoisted(() => vi.fn());
+
+vi.mock("@/lib/server/safeMediaFetch", () => ({
+  safeFetchMedia: mockSafeFetchMedia,
+  getFallbackMediaKind: () => "image",
+}));
+
 /**
  * Tests for prompt passthrough when dynamicInputs are present.
  *
@@ -96,6 +103,13 @@ describe("Replicate prompt passthrough with dynamicInputs", () => {
     capturedPredictionBody = null;
     mockFetch = createMockFetch();
     vi.stubGlobal("fetch", mockFetch);
+    mockSafeFetchMedia.mockReset();
+    mockSafeFetchMedia.mockResolvedValue({
+      buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+      contentType: "image/png",
+      finalUrl: "https://replicate.delivery/test/image.png",
+      status: 200,
+    });
   });
 
   afterEach(() => {

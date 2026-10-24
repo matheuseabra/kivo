@@ -5,7 +5,7 @@
  */
 
 import { GenerationInput, GenerationOutput } from "@/lib/providers/types";
-import { validateMediaUrl } from "@/utils/urlValidation";
+import { getFallbackMediaKind, safeFetchMedia } from "@/lib/server/safeMediaFetch";
 import {
   getParameterTypesFromSchema,
   coerceParameterTypes,
@@ -251,23 +251,6 @@ export async function generateWithReplicate(
   // Fetch the first output and convert to base64
   const mediaUrl = outputUrls[0];
 
-  // Validate URL before fetching (SSRF protection)
-  const mediaUrlCheck = validateMediaUrl(mediaUrl);
-  if (!mediaUrlCheck.valid) {
-    console.error(`[API:${requestId}] Invalid media URL from Replicate: ${mediaUrl}`);
-    return { success: false, error: `Invalid media URL: ${mediaUrlCheck.error}` };
-  }
-
-  console.log(`[API:${requestId}] Fetching output from: ${mediaUrl.substring(0, 80)}...`);
-  const mediaResponse = await fetch(mediaUrl);
-
-  if (!mediaResponse.ok) {
-    return {
-      success: false,
-      error: `Failed to fetch output: ${mediaResponse.status}`,
-    };
-  }
-
   // Check if this is a 3D model — return URL directly (GLB files are binary)
   const is3DModel = input.model.capabilities.some(c => c.includes("3d"));
   if (is3DModel) {
@@ -284,14 +267,18 @@ export async function generateWithReplicate(
     };
   }
 
-  // Determine MIME type from response
-  const contentType = mediaResponse.headers.get("content-type") || "image/png";
+  console.log(`[API:${requestId}] Fetching generated output media`);
+  const downloaded = await safeFetchMedia(mediaUrl, {
+    kind: "media",
+    fallbackKind: getFallbackMediaKind(input.model.capabilities),
+  });
+  const contentType = downloaded.contentType;
   const isVideo = contentType.startsWith("video/");
   const isConcreteMedia = contentType.startsWith("audio/") || contentType.startsWith("video/") || contentType.startsWith("image/");
   const isAudio = contentType.startsWith("audio/") ||
     (!isConcreteMedia && input.model.capabilities.some(c => c.includes("audio")));
 
-  const mediaArrayBuffer = await mediaResponse.arrayBuffer();
+  const mediaArrayBuffer = downloaded.buffer;
   const mediaSizeBytes = mediaArrayBuffer.byteLength;
   const mediaSizeMB = mediaSizeBytes / (1024 * 1024);
 
@@ -312,7 +299,7 @@ export async function generateWithReplicate(
     };
   }
 
-  const mediaBase64 = Buffer.from(mediaArrayBuffer).toString("base64");
+  const mediaBase64 = mediaArrayBuffer.toString("base64");
 
   if (isAudio) {
     const audioContentType = contentType.startsWith("audio/") ? contentType : "audio/mpeg";
