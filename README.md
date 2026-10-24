@@ -2,7 +2,7 @@
 
 <img width="96" alt="Kivo" src="public/kivo-mark.svg" />
 
-## Kivo TEST
+## Kivo
 
 ### An Open Visual Workflow Editor for AI APIs
 
@@ -10,10 +10,6 @@
 
 Build AI image, 3D, audio and video generation pipelines by connecting nodes on a visual canvas.<br />
 Multi-provider support. Dynamic prompting features. Local, private, MIT, BYOK.
-
-<br />
-
-[Discord](https://discord.com/invite/89Nr6EKkTf)
 
 <br />
 
@@ -63,15 +59,15 @@ Kivo is a node-based workflow editor for AI media generation. Drag nodes onto an
 ### Prerequisites
 
 - Node.js 18+
-- npm
+- bun
 
 ### Quick Start
 
 ```bash
 git clone https://github.com/matheuseabra/kivo.git
 cd kivo
-npm install
-npm run dev
+bun install
+bun run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
@@ -95,15 +91,15 @@ WAVESPEED_API_KEY=your_wavespeed_api_key    # Optional
 ### Build
 
 ```bash
-npm run build
-npm run start
+bun run build
+bun run start
 ```
 
 ## Example Workflows
 
 The `/examples` directory contains example workflow files. To try them:
 
-1. Start the dev server with `npm run dev`
+1. Start the dev server with `bun run dev`
 2. Drag any `.json` file from the `/examples` folder into the browser window
 3. Review the prompts in each node before running — they're targeted to specific use cases
 
@@ -149,9 +145,9 @@ The `/examples` directory contains example workflow files. To try them:
 ## Testing
 
 ```bash
-npm test              # Watch mode
-npm run test:run      # Single run
-npm run test:coverage # With coverage report
+bun run test              # Watch mode
+bun run test:run          # Single run
+bun run test:coverage     # With coverage report
 ```
 
 ## Contributing
