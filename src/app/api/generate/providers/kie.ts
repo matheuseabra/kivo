@@ -6,6 +6,7 @@
  */
 
 import { GenerationInput, GenerationOutput } from "@/lib/providers/types";
+import { getFallbackMediaKind, safeFetchMedia } from "@/lib/server/safeMediaFetch";
 import { validateMediaUrl } from "@/utils/urlValidation";
 
 const MAX_MEDIA_SIZE = 500 * 1024 * 1024; // 500MB
@@ -926,27 +927,13 @@ export async function fetchKieMediaResult(
       return { success: false, error: "No output URL in Veo response" };
     }
 
-    const mediaUrlCheck = validateMediaUrl(mediaUrl);
-    if (!mediaUrlCheck.valid) {
-      return { success: false, error: `Invalid media URL: ${mediaUrlCheck.error}` };
-    }
-
-    console.log(`[API:${requestId}] Fetching Veo output from: ${mediaUrl.substring(0, 80)}...`);
-    const mediaResponse = await fetch(mediaUrl);
-    if (!mediaResponse.ok) {
-      return { success: false, error: `Failed to fetch output: ${mediaResponse.status}` };
-    }
-
-    const mediaContentLength = parseInt(mediaResponse.headers.get("content-length") || "0", 10);
-    if (mediaContentLength > MAX_MEDIA_SIZE) {
-      return { success: false, error: `Media too large: ${(mediaContentLength / (1024 * 1024)).toFixed(0)}MB > 500MB limit` };
-    }
-
-    const contentType = mediaResponse.headers.get("content-type") || "video/mp4";
-    const mediaArrayBuffer = await mediaResponse.arrayBuffer();
-    if (mediaArrayBuffer.byteLength > MAX_MEDIA_SIZE) {
-      return { success: false, error: `Media too large: ${(mediaArrayBuffer.byteLength / (1024 * 1024)).toFixed(0)}MB > 500MB limit` };
-    }
+    console.log(`[API:${requestId}] Fetching generated Veo media`);
+    const downloaded = await safeFetchMedia(mediaUrl, {
+      kind: "video",
+      maxBytes: MAX_MEDIA_SIZE,
+    });
+    const contentType = downloaded.contentType;
+    const mediaArrayBuffer = downloaded.buffer;
     const mediaSizeMB = mediaArrayBuffer.byteLength / (1024 * 1024);
 
     console.log(`[API:${requestId}] Veo output: ${contentType}, ${mediaSizeMB.toFixed(2)}MB`);
@@ -959,7 +946,7 @@ export async function fetchKieMediaResult(
       };
     }
 
-    const mediaBase64 = Buffer.from(mediaArrayBuffer).toString("base64");
+    const mediaBase64 = mediaArrayBuffer.toString("base64");
     console.log(`[API:${requestId}] SUCCESS - Returning Veo video`);
     return {
       success: true,
@@ -1025,24 +1012,14 @@ export async function fetchKieMediaResult(
     isAudio = true;
   }
 
-  const mediaUrlCheck = validateMediaUrl(mediaUrl);
-  if (!mediaUrlCheck.valid) {
-    return { success: false, error: `Invalid media URL: ${mediaUrlCheck.error}` };
-  }
-
-  console.log(`[API:${requestId}] Fetching output from: ${mediaUrl.substring(0, 80)}...`);
-  const mediaResponse = await fetch(mediaUrl);
-
-  if (!mediaResponse.ok) {
-    return { success: false, error: `Failed to fetch output: ${mediaResponse.status}` };
-  }
-
-  const mediaContentLength = parseInt(mediaResponse.headers.get("content-length") || "0", 10);
-  if (mediaContentLength > MAX_MEDIA_SIZE) {
-    return { success: false, error: `Media too large: ${(mediaContentLength / (1024 * 1024)).toFixed(0)}MB > 500MB limit` };
-  }
-
-  const rawContentType = mediaResponse.headers.get("content-type") || "";
+  const fallbackKind = isVideo ? "video" : isAudio ? "audio" : getFallbackMediaKind(capabilities);
+  console.log(`[API:${requestId}] Fetching generated Kie media`);
+  const downloaded = await safeFetchMedia(mediaUrl, {
+    kind: "media",
+    fallbackKind,
+    maxBytes: MAX_MEDIA_SIZE,
+  });
+  const rawContentType = downloaded.contentType;
   const isConcreteMedia = rawContentType.startsWith("audio/") || rawContentType.startsWith("video/") || rawContentType.startsWith("image/");
   if (rawContentType.startsWith("video/")) {
     isVideo = true;
@@ -1055,16 +1032,13 @@ export async function fetchKieMediaResult(
   }
   const contentType = rawContentType || (isVideo ? "video/mp4" : isAudio ? "audio/mpeg" : "image/png");
 
-  const mediaArrayBuffer = await mediaResponse.arrayBuffer();
-  if (mediaArrayBuffer.byteLength > MAX_MEDIA_SIZE) {
-    return { success: false, error: `Media too large: ${(mediaArrayBuffer.byteLength / (1024 * 1024)).toFixed(0)}MB > 500MB limit` };
-  }
+  const mediaArrayBuffer = downloaded.buffer;
   const mediaSizeMB = mediaArrayBuffer.byteLength / (1024 * 1024);
 
   console.log(`[API:${requestId}] Output: ${contentType}, ${mediaSizeMB.toFixed(2)}MB`);
 
   if (isAudio) {
-    const audioBase64 = Buffer.from(mediaArrayBuffer).toString("base64");
+    const audioBase64 = mediaArrayBuffer.toString("base64");
     console.log(`[API:${requestId}] SUCCESS - Returning audio`);
     return {
       success: true,
@@ -1084,7 +1058,7 @@ export async function fetchKieMediaResult(
     };
   }
 
-  const mediaBase64 = Buffer.from(mediaArrayBuffer).toString("base64");
+  const mediaBase64 = mediaArrayBuffer.toString("base64");
   console.log(`[API:${requestId}] SUCCESS - Returning ${isVideo ? "video" : "image"}`);
 
   return {

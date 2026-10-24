@@ -6,6 +6,7 @@
  */
 
 import { GenerationInput, GenerationOutput } from "@/lib/providers/types";
+import { getFallbackMediaKind, safeFetchMedia } from "@/lib/server/safeMediaFetch";
 import { validateMediaUrl } from "@/utils/urlValidation";
 
 type WaveSpeedStatus = "created" | "pending" | "processing" | "completed" | "failed";
@@ -348,36 +349,18 @@ export async function generateWithWaveSpeed(
     };
   }
 
-  console.log(`[API:${requestId}] Fetching WaveSpeed output from: ${outputUrl.substring(0, 80)}...`);
-
-  const outputResponse = await fetch(outputUrl);
-
-  if (!outputResponse.ok) {
-    return {
-      success: false,
-      error: `Failed to fetch output: ${outputResponse.status}`,
-    };
-  }
-
-  // Check file size before downloading body
   const MAX_MEDIA_SIZE_WS = 500 * 1024 * 1024; // 500MB
-  const wsContentLength = parseInt(outputResponse.headers.get("content-length") || "0", 10);
-  if (!isNaN(wsContentLength) && wsContentLength > MAX_MEDIA_SIZE_WS) {
-    return { success: false, error: `Media too large: ${(wsContentLength / (1024 * 1024)).toFixed(0)}MB > 500MB limit` };
-  }
-
-  const outputArrayBuffer = await outputResponse.arrayBuffer();
-  if (outputArrayBuffer.byteLength > MAX_MEDIA_SIZE_WS) {
-    return { success: false, error: `Media too large: ${(outputArrayBuffer.byteLength / (1024 * 1024)).toFixed(0)}MB > 500MB limit` };
-  }
+  const isAudioModel = input.model.capabilities.some(c => c.includes("audio"));
+  console.log(`[API:${requestId}] Fetching generated WaveSpeed output media`);
+  const downloaded = await safeFetchMedia(outputUrl, {
+    kind: "media",
+    fallbackKind: getFallbackMediaKind(input.model.capabilities),
+    maxBytes: MAX_MEDIA_SIZE_WS,
+  });
+  const outputArrayBuffer = downloaded.buffer;
   const outputSizeMB = outputArrayBuffer.byteLength / (1024 * 1024);
 
-  const rawContentType = outputResponse.headers.get("content-type");
-  const isAudioModel = input.model.capabilities.some(c => c.includes("audio"));
-  const contentType =
-    (rawContentType && (rawContentType.startsWith("video/") || rawContentType.startsWith("image/") || rawContentType.startsWith("audio/")))
-      ? rawContentType
-      : (isVideoModel ? "video/mp4" : isAudioModel ? "audio/mpeg" : "image/png");
+  const contentType = downloaded.contentType;
 
   console.log(`[API:${requestId}] Output: ${contentType}, ${outputSizeMB.toFixed(2)}MB`);
 

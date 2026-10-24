@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Use vi.hoisted to define mocks that work with hoisted vi.mock
-const { mockGenerateVideos, mockGetVideosOperation, MockGoogleGenAI } = vi.hoisted(() => {
+const { mockGenerateVideos, mockGetVideosOperation, mockSafeFetchMedia, MockGoogleGenAI } = vi.hoisted(() => {
   const mockGenerateVideos = vi.fn();
   const mockGetVideosOperation = vi.fn();
+  const mockSafeFetchMedia = vi.fn();
 
   class MockGoogleGenAI {
     apiKey: string;
@@ -26,16 +27,16 @@ const { mockGenerateVideos, mockGetVideosOperation, MockGoogleGenAI } = vi.hoist
     }
   }
 
-  return { mockGenerateVideos, mockGetVideosOperation, MockGoogleGenAI };
+  return { mockGenerateVideos, mockGetVideosOperation, mockSafeFetchMedia, MockGoogleGenAI };
 });
 
 vi.mock("@google/genai", () => ({
   GoogleGenAI: MockGoogleGenAI,
 }));
 
-// Mock global fetch for video download
-const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
+vi.mock("@/lib/server/safeMediaFetch", () => ({
+  safeFetchMedia: mockSafeFetchMedia,
+}));
 
 import { generateWithGeminiVideo } from "../gemini";
 
@@ -43,6 +44,13 @@ describe("generateWithGeminiVideo", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     MockGoogleGenAI.reset();
+    mockSafeFetchMedia.mockReset();
+    mockSafeFetchMedia.mockResolvedValue({
+      buffer: Buffer.from([0x01]),
+      contentType: "video/mp4",
+      finalUrl: "https://media.example/video.mp4",
+      status: 200,
+    });
   });
 
   it("should generate a text-to-video successfully", async () => {
@@ -62,9 +70,11 @@ describe("generateWithGeminiVideo", () => {
 
     // Mock video download
     const videoBytes = new Uint8Array([0x00, 0x00, 0x01, 0x00]);
-    mockFetch.mockResolvedValue({
-      ok: true,
-      arrayBuffer: () => Promise.resolve(videoBytes.buffer),
+    mockSafeFetchMedia.mockResolvedValue({
+      buffer: Buffer.from(videoBytes),
+      contentType: "video/mp4",
+      finalUrl: "https://media.example/video.mp4",
+      status: 200,
     });
 
     const result = await generateWithGeminiVideo(
@@ -118,9 +128,11 @@ describe("generateWithGeminiVideo", () => {
 
     // Mock video download
     const videoBytes = new Uint8Array([0x00, 0x01]);
-    mockFetch.mockResolvedValue({
-      ok: true,
-      arrayBuffer: () => Promise.resolve(videoBytes.buffer),
+    mockSafeFetchMedia.mockResolvedValue({
+      buffer: Buffer.from(videoBytes),
+      contentType: "video/mp4",
+      finalUrl: "https://media.example/video.mp4",
+      status: 200,
     });
 
     // Start generation (will hit the polling loop)
@@ -149,14 +161,16 @@ describe("generateWithGeminiVideo", () => {
       done: true,
       response: {
         generatedVideos: [
-          { video: { uri: "https://example.com/video?id=789" } },
+          { video: { uri: "https://generativelanguage.googleapis.com/v1/video?id=789" } },
         ],
       },
     });
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      arrayBuffer: () => Promise.resolve(new Uint8Array([0x01]).buffer),
+    mockSafeFetchMedia.mockResolvedValue({
+      buffer: Buffer.from([0x01]),
+      contentType: "video/mp4",
+      finalUrl: "https://media.example/video.mp4",
+      status: 200,
     });
 
     const result = await generateWithGeminiVideo(
@@ -221,15 +235,12 @@ describe("generateWithGeminiVideo", () => {
       done: true,
       response: {
         generatedVideos: [
-          { video: { uri: "https://example.com/video?id=fail" } },
+          { video: { uri: "https://generativelanguage.googleapis.com/v1/video?id=fail" } },
         ],
       },
     });
 
-    mockFetch.mockResolvedValue({
-      ok: false,
-      status: 403,
-    });
+    mockSafeFetchMedia.mockRejectedValue(new Error("Media download failed with status 403"));
 
     const result = await generateWithGeminiVideo(
       "test-006",
@@ -244,19 +255,45 @@ describe("generateWithGeminiVideo", () => {
     expect(result.error).toContain("Failed to download generated video");
   });
 
+  it("rejects an unexpected video URI host before downloading", async () => {
+    mockGenerateVideos.mockResolvedValue({
+      done: true,
+      response: {
+        generatedVideos: [
+          { video: { uri: "https://attacker.example/video?id=unexpected" } },
+        ],
+      },
+    });
+
+    const result = await generateWithGeminiVideo(
+      "test-009",
+      "test-api-key",
+      "veo-3.1/text-to-video",
+      "test prompt",
+      [],
+      {},
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Invalid video URI from Gemini");
+    expect(mockSafeFetchMedia).not.toHaveBeenCalled();
+  });
+
   it("should map veo-3.1-fast models to correct API model ID", async () => {
     mockGenerateVideos.mockResolvedValue({
       done: true,
       response: {
         generatedVideos: [
-          { video: { uri: "https://example.com/video?id=fast" } },
+          { video: { uri: "https://generativelanguage.googleapis.com/v1/video?id=fast" } },
         ],
       },
     });
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      arrayBuffer: () => Promise.resolve(new Uint8Array([0x01]).buffer),
+    mockSafeFetchMedia.mockResolvedValue({
+      buffer: Buffer.from([0x01]),
+      contentType: "video/mp4",
+      finalUrl: "https://media.example/video.mp4",
+      status: 200,
     });
 
     await generateWithGeminiVideo(
@@ -280,14 +317,16 @@ describe("generateWithGeminiVideo", () => {
       done: true,
       response: {
         generatedVideos: [
-          { video: { uri: "https://example.com/video?id=params" } },
+          { video: { uri: "https://generativelanguage.googleapis.com/v1/video?id=params" } },
         ],
       },
     });
 
-    mockFetch.mockResolvedValue({
-      ok: true,
-      arrayBuffer: () => Promise.resolve(new Uint8Array([0x01]).buffer),
+    mockSafeFetchMedia.mockResolvedValue({
+      buffer: Buffer.from([0x01]),
+      contentType: "video/mp4",
+      finalUrl: "https://media.example/video.mp4",
+      status: 200,
     });
 
     await generateWithGeminiVideo(

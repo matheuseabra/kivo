@@ -6,6 +6,7 @@
  */
 
 import { GenerationInput, GenerationOutput } from "@/lib/providers/types";
+import { getFallbackMediaKind, safeFetchMedia } from "@/lib/server/safeMediaFetch";
 import { validateMediaUrl } from "@/utils/urlValidation";
 import {
   INPUT_PATTERNS,
@@ -521,31 +522,20 @@ export async function generateWithFalQueue(
         };
       }
 
-      // Validate URL before fetching (SSRF protection)
-      const mediaUrlCheck = validateMediaUrl(mediaUrl);
-      if (!mediaUrlCheck.valid) {
-        return { success: false, error: `Invalid media URL: ${mediaUrlCheck.error}` };
-      }
-
       // Fetch the media and convert to base64
-      console.log(`[API:${requestId}] Fetching output from: ${mediaUrl.substring(0, 80)}...`);
-      const mediaResponse = await fetch(mediaUrl);
-
-      if (!mediaResponse.ok) {
-        return {
-          success: false,
-          error: `Failed to fetch output: ${mediaResponse.status}`,
-        };
-      }
+      console.log(`[API:${requestId}] Fetching generated output media`);
+      const downloaded = await safeFetchMedia(mediaUrl, {
+        kind: "media",
+        fallbackKind: getFallbackMediaKind(input.model.capabilities),
+      });
 
       // Detect actual media type from response content-type, falling back to model hints
-      const rawContentType = mediaResponse.headers.get("content-type") || "";
+      const rawContentType = downloaded.contentType;
       const isAudioResponse = rawContentType.startsWith("audio/") || (!rawContentType.startsWith("video/") && !rawContentType.startsWith("image/") && isAudioModel);
 
       if (isAudioResponse) {
         const audioContentType = rawContentType.startsWith("audio/") ? rawContentType : "audio/mpeg";
-        const audioBuffer = await mediaResponse.arrayBuffer();
-        const audioBase64 = Buffer.from(audioBuffer).toString("base64");
+        const audioBase64 = downloaded.buffer.toString("base64");
         console.log(`[API:${requestId}] SUCCESS - Returning audio`);
         return {
           success: true,
@@ -560,7 +550,7 @@ export async function generateWithFalQueue(
       const contentType = rawContentType || (isVideoModel ? "video/mp4" : "image/png");
       const isVideo = contentType.startsWith("video/");
 
-      const mediaArrayBuffer = await mediaResponse.arrayBuffer();
+      const mediaArrayBuffer = downloaded.buffer;
       const mediaSizeBytes = mediaArrayBuffer.byteLength;
       const mediaSizeMB = mediaSizeBytes / (1024 * 1024);
 

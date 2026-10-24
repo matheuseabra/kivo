@@ -5,10 +5,22 @@ import { buildWorkflowContext } from '@/lib/chat/contextBuilder';
 import { extractSubgraph } from '@/lib/chat/subgraphExtractor';
 import { WorkflowNode } from '@/types';
 import { WorkflowEdge } from '@/types/workflow';
+import { isHostedMode, resolveProviderApiKey } from '@/lib/server/hosted-access';
+import { withApiRequestGuard } from '@/lib/server/request-guards';
 
 export const maxDuration = 60; // 1 minute timeout
 
-export async function POST(request: Request) {
+export async function POST(request: Request): Promise<Response> {
+  return withApiRequestGuard(request, {
+    bucket: 'chat',
+    maxRequests: 20,
+    windowMs: 60_000,
+    maxConcurrent: 2,
+    bodyLimitBytes: 8 * 1024 * 1024,
+  }, handlePost);
+}
+
+async function handlePost(request: Request) {
   try {
     const { messages, workflowState, selectedNodeIds } = await request.json() as {
       messages: UIMessage[];
@@ -16,10 +28,9 @@ export async function POST(request: Request) {
       selectedNodeIds?: string[];
     };
 
-    // Get API key from environment
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = resolveProviderApiKey(request, 'gemini');
     if (!apiKey) {
-      return new Response('GEMINI_API_KEY not configured', { status: 500 });
+      return new Response('GEMINI_API_KEY not configured', { status: isHostedMode() ? 401 : 500 });
     }
 
     // Extract subgraph if nodes are selected, otherwise use full workflow

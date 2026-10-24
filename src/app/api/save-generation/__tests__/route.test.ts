@@ -7,12 +7,17 @@ const mockStat = vi.fn();
 const mockMkdir = vi.fn();
 const mockWriteFile = vi.fn();
 const mockReaddir = vi.fn();
+const mockSafeFetchMedia = vi.fn();
 
 vi.mock("fs/promises", () => ({
   stat: (...args: unknown[]) => mockStat(...args),
   mkdir: (...args: unknown[]) => mockMkdir(...args),
   writeFile: (...args: unknown[]) => mockWriteFile(...args),
   readdir: (...args: unknown[]) => mockReaddir(...args),
+}));
+
+vi.mock("@/lib/server/safeMediaFetch", () => ({
+  safeFetchMedia: (...args: unknown[]) => mockSafeFetchMedia(...args),
 }));
 
 // Mock logger to avoid console noise during tests
@@ -23,9 +28,6 @@ vi.mock("@/utils/logger", () => ({
     error: vi.fn(),
   },
 }));
-
-// Store original fetch
-const originalFetch = global.fetch;
 
 import { POST, getExtensionFromUrl } from "../route";
 
@@ -50,13 +52,11 @@ function createBase64DataUrl(content: string, mimeType = "image/png"): string {
 describe("/api/save-generation route", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Reset fetch mock
-    global.fetch = originalFetch;
+    mockSafeFetchMedia.mockReset();
   });
 
   afterEach(() => {
     vi.resetAllMocks();
-    global.fetch = originalFetch;
   });
 
   describe("POST - Save generation", () => {
@@ -240,12 +240,12 @@ describe("/api/save-generation route", () => {
       const mockContent = "fetched-image-content";
       const expectedHash = computeExpectedHash(Buffer.from(mockContent));
 
-      // Mock fetch
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        headers: new Map([["content-type", "image/png"]]),
-        arrayBuffer: () => Promise.resolve(new TextEncoder().encode(mockContent).buffer),
-      }) as unknown as typeof fetch;
+      mockSafeFetchMedia.mockResolvedValue({
+        buffer: Buffer.from(mockContent),
+        contentType: "image/png",
+        finalUrl: "https://example.com/image.png",
+        status: 200,
+      });
 
       mockStat.mockResolvedValue({
         isDirectory: () => true,
@@ -264,20 +264,15 @@ describe("/api/save-generation route", () => {
 
       expect(data.success).toBe(true);
       expect(data.filename).toContain(expectedHash);
-      // Fetch is called with URL and options object containing AbortController signal
-      expect(global.fetch).toHaveBeenCalledWith(
-        "https://example.com/image.png",
-        expect.objectContaining({ signal: expect.any(AbortSignal) })
-      );
+      expect(mockSafeFetchMedia).toHaveBeenCalledWith("https://example.com/image.png", {
+        kind: "image",
+        maxBytes: 100 * 1024 * 1024,
+        timeoutMs: 60_000,
+      });
     });
 
     it("should handle failed HTTP fetch", async () => {
-      // Mock fetch to return error
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 404,
-        statusText: "Not Found",
-      }) as unknown as typeof fetch;
+      mockSafeFetchMedia.mockRejectedValue(new Error("Media download failed with status 404"));
 
       mockStat.mockResolvedValue({
         isDirectory: () => true,
@@ -294,7 +289,37 @@ describe("/api/save-generation route", () => {
 
       expect(response.status).toBe(500);
       expect(data.success).toBe(false);
-      expect(data.error).toContain("Failed to fetch content");
+      expect(data.error).toContain("Media download failed with status 404");
+    });
+
+    it("should reject a blocked remote media destination", async () => {
+      mockSafeFetchMedia.mockRejectedValue(new Error("Blocked non-public IP: 127.0.0.1"));
+      mockStat.mockResolvedValue({ isDirectory: () => true });
+
+      const response = await POST(createMockPostRequest({
+        directoryPath: "/test/generations",
+        image: "http://127.0.0.1/secret.png",
+      }));
+      const data = await response.json();
+
+      expect(response.status).toBe(500);
+      expect(data.success).toBe(false);
+      expect(data.error).toContain("Blocked non-public IP");
+      expect(mockWriteFile).not.toHaveBeenCalled();
+    });
+
+    it("should pass unsupported URL schemes to media validation", async () => {
+      mockSafeFetchMedia.mockRejectedValue(new Error("Blocked protocol: ftp:"));
+      mockStat.mockResolvedValue({ isDirectory: () => true });
+
+      const response = await POST(createMockPostRequest({
+        directoryPath: "/test/generations",
+        image: "ftp://media.example/image.png",
+      }));
+
+      expect(response.status).toBe(500);
+      expect(mockSafeFetchMedia).toHaveBeenCalledWith("ftp://media.example/image.png", expect.any(Object));
+      expect(mockWriteFile).not.toHaveBeenCalled();
     });
 
     it("should handle raw base64 without data URL prefix", async () => {
