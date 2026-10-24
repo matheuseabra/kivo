@@ -109,11 +109,13 @@ export function Header() {
   };
 
   const handleNewProject = () => {
+    setShowQuickstart(false);
     setProjectModalMode("new");
     setShowProjectModal(true);
   };
 
   const handleOpenSettings = () => {
+    setShowQuickstart(false);
     setProjectModalMode("settings");
     setShowProjectModal(true);
   };

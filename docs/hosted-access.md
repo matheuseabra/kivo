@@ -24,6 +24,8 @@ The access gate covers pages and API paths, including all HTTP methods. It leave
 
 Hosted mode is strictly BYOK. Provider API routes accept the existing provider key headers and ignore operator API-key environment variables. The browser sends a provider key with the request that uses it. Kivo does not save that key on the server. `/api/env-status` returns `false` for every provider in hosted mode, even when operator keys exist in the process environment.
 
+Browser-entered provider keys stay in JavaScript memory for the current page session. Reloading the page or closing the tab removes them. Older browser settings are migrated into memory and scrubbed from local storage. Workflow exports do not include provider keys. The settings screens say that keys are not verified; `/api/env-status` reports local server environment presence only and does not validate a browser key.
+
 The resolver accepts both existing model-route aliases where they differ:
 
 | Provider | Accepted request header | Local environment fallback |

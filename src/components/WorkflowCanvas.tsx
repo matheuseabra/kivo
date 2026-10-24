@@ -67,6 +67,7 @@ import { ControlPanel } from "./nodes/ControlPanel";
 import { detectAndSplitGrid } from "@/utils/gridSplitter";
 import { logger } from "@/utils/logger";
 import { WelcomeModal } from "./quickstart";
+import { addProviderApiKeyHeader } from "@/store/utils/providerCredentials";
 import { ProjectSetupModal } from "./ProjectSetupModal";
 import { ChatPanel } from "./ChatPanel";
 import { EditOperation } from "@/lib/chat/editOperations";
@@ -1146,7 +1147,7 @@ export function WorkflowCanvas() {
     try {
       const response = await fetch("/api/quickstart", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: addProviderApiKeyHeader("gemini", { "Content-Type": "application/json" }),
         body: JSON.stringify({
           description,
           contentLevel: "full",

@@ -25,9 +25,9 @@ import {
   registerProvider,
 } from "@/lib/providers";
 import { validateMediaUrl } from "@/utils/urlValidation";
+import { getProviderApiKey } from "@/store/utils/providerCredentials";
 
 const WAVESPEED_API_BASE = "https://api.wavespeed.ai/api/v3";
-const PROVIDER_SETTINGS_KEY = "node-banana-provider-settings";
 
 /**
  * WaveSpeed task status from API
@@ -73,24 +73,8 @@ interface WaveSpeedPredictionResponse {
   message?: string;
 }
 
-/**
- * Get API key from localStorage (client-side only)
- * Returns null when running on server or if not configured
- */
-function getApiKeyFromStorage(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const settingsJson = localStorage.getItem(PROVIDER_SETTINGS_KEY);
-    if (!settingsJson) return null;
-
-    const settings = JSON.parse(settingsJson);
-    return settings?.providers?.wavespeed?.apiKey ?? null;
-  } catch {
-    return null;
-  }
+function getApiKey(): string | null {
+  return getProviderApiKey("wavespeed");
 }
 
 /**
@@ -169,7 +153,7 @@ const wavespeedProvider: ProviderInterface = {
   async listModels(): Promise<ProviderModel[]> {
     // WaveSpeed doesn't have a public models API, return static list
     // Only return models if API key is configured (to signal availability)
-    const apiKey = getApiKeyFromStorage();
+    const apiKey = getApiKey();
     if (!apiKey) {
       console.warn("[WaveSpeed] No API key configured, returning empty model list");
       return [];
@@ -178,7 +162,7 @@ const wavespeedProvider: ProviderInterface = {
   },
 
   async searchModels(query: string): Promise<ProviderModel[]> {
-    const apiKey = getApiKeyFromStorage();
+    const apiKey = getApiKey();
     if (!apiKey) {
       return [];
     }
@@ -193,7 +177,7 @@ const wavespeedProvider: ProviderInterface = {
   },
 
   async getModel(modelId: string): Promise<ProviderModel | null> {
-    const apiKey = getApiKeyFromStorage();
+    const apiKey = getApiKey();
     if (!apiKey) {
       return null;
     }
@@ -202,7 +186,7 @@ const wavespeedProvider: ProviderInterface = {
   },
 
   async generate(input: GenerationInput): Promise<GenerationOutput> {
-    const apiKey = getApiKeyFromStorage();
+    const apiKey = getApiKey();
     if (!apiKey) {
       return {
         success: false,
@@ -408,11 +392,11 @@ const wavespeedProvider: ProviderInterface = {
   },
 
   isConfigured(): boolean {
-    return !!getApiKeyFromStorage();
+    return !!getApiKey();
   },
 
   getApiKey(): string | null {
-    return getApiKeyFromStorage();
+    return getApiKey();
   },
 };
 

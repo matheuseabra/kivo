@@ -121,7 +121,7 @@ export function FTUXApiKeysStep({}: FTUXStepProps) {
       ...prev,
       [providerId]: newValue,
     }));
-    // Save to localStorage immediately (null if empty string)
+    // The store keeps the credential in memory and persists only provider preferences.
     updateProviderApiKey(providerId, newValue || null);
   };
 
@@ -131,7 +131,7 @@ export function FTUXApiKeysStep({}: FTUXStepProps) {
         API Keys
       </h3>
       <p className="text-sm text-neutral-400 mb-4">
-        Add keys here to use AI providers (stored in browser), or save them to your .env file for better security and persistence.
+        Keys entered here stay in this page session. A reload or closing this tab removes them. This screen does not verify keys.
       </p>
 
       <div className="space-y-2">
@@ -177,48 +177,41 @@ export function FTUXApiKeysStep({}: FTUXStepProps) {
                   )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  {hasKey ? (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs text-green-400">
-                        Configured via .env
-                      </span>
-                      <svg
-                        className="w-4 h-4 text-green-400"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
+                  <input
+                    type={showKey[provider.id] ? "text" : "password"}
+                    value={localKeys[provider.id]}
+                    onChange={(e) => handleKeyChange(provider.id, e.target.value)}
+                    placeholder="Enter key..."
+                    aria-label={`${provider.name} API key`}
+                    className="w-32 px-2 py-1 bg-neutral-800 border border-neutral-600 rounded text-neutral-100 text-xs focus:outline-none focus:border-neutral-500"
+                  />
+                  {localKeys[provider.id] ? (
+                    <>
+                      <span className="text-xs text-neutral-400">Saved for this tab · not verified</span>
+                      <button
+                        type="button"
+                        aria-label={`Clear ${provider.name} API key`}
+                        onClick={() => handleKeyChange(provider.id, "")}
+                        className="text-xs text-neutral-400 hover:text-neutral-200"
                       >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M5 13l4 4L19 7"
-                        />
-                      </svg>
-                    </div>
-                  ) : (
-                    <input
-                      type={showKey[provider.id] ? "text" : "password"}
-                      value={localKeys[provider.id]}
-                      onChange={(e) => handleKeyChange(provider.id, e.target.value)}
-                      placeholder="Enter key..."
-                      className="w-32 px-2 py-1 bg-neutral-800 border border-neutral-600 rounded text-neutral-100 text-xs focus:outline-none focus:border-neutral-500"
-                    />
-                  )}
-                  {!hasKey && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setShowKey((prev) => ({
-                          ...prev,
-                          [provider.id]: !prev[provider.id],
-                        }))
-                      }
-                      className="text-xs text-neutral-400 hover:text-neutral-200"
-                    >
-                      {showKey[provider.id] ? "Hide" : "Show"}
-                    </button>
-                  )}
+                        Clear
+                      </button>
+                    </>
+                  ) : hasKey ? (
+                    <span className="text-xs text-neutral-400">Server key configured · not verified</span>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowKey((prev) => ({
+                        ...prev,
+                        [provider.id]: !prev[provider.id],
+                      }))
+                    }
+                    className="text-xs text-neutral-400 hover:text-neutral-200"
+                  >
+                    {showKey[provider.id] ? "Hide" : "Show"}
+                  </button>
                 </div>
               </div>
             </div>

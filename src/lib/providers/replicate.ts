@@ -21,9 +21,9 @@ import {
   GenerationOutput,
   registerProvider,
 } from "@/lib/providers";
+import { getProviderApiKey } from "@/store/utils/providerCredentials";
 
 const REPLICATE_API_BASE = "https://api.replicate.com/v1";
-const PROVIDER_SETTINGS_KEY = "node-banana-provider-settings";
 
 /**
  * Response schema from Replicate's list models endpoint
@@ -81,24 +81,8 @@ interface ReplicatePrediction {
   };
 }
 
-/**
- * Get API key from localStorage (client-side only)
- * Returns null when running on server or if not configured
- */
-function getApiKeyFromStorage(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const settingsJson = localStorage.getItem(PROVIDER_SETTINGS_KEY);
-    if (!settingsJson) return null;
-
-    const settings = JSON.parse(settingsJson);
-    return settings?.providers?.replicate?.apiKey ?? null;
-  } catch {
-    return null;
-  }
+function getApiKey(): string | null {
+  return getProviderApiKey("replicate");
 }
 
 /**
@@ -157,7 +141,7 @@ const replicateProvider: ProviderInterface = {
   async listModels(): Promise<ProviderModel[]> {
     // This method is primarily for client-side use or testing
     // Real API calls should go through the API route
-    const apiKey = getApiKeyFromStorage();
+    const apiKey = getApiKey();
     if (!apiKey) {
       console.warn("[Replicate] No API key configured, cannot list models");
       return [];
@@ -188,7 +172,7 @@ const replicateProvider: ProviderInterface = {
   },
 
   async searchModels(query: string): Promise<ProviderModel[]> {
-    const apiKey = getApiKeyFromStorage();
+    const apiKey = getApiKey();
     if (!apiKey) {
       console.warn("[Replicate] No API key configured, cannot search models");
       return [];
@@ -222,7 +206,7 @@ const replicateProvider: ProviderInterface = {
   },
 
   async getModel(modelId: string): Promise<ProviderModel | null> {
-    const apiKey = getApiKeyFromStorage();
+    const apiKey = getApiKey();
     if (!apiKey) {
       console.warn("[Replicate] No API key configured, cannot get model");
       return null;
@@ -263,7 +247,7 @@ const replicateProvider: ProviderInterface = {
   },
 
   async generate(input: GenerationInput): Promise<GenerationOutput> {
-    const apiKey = input.model.provider === "replicate" ? getApiKeyFromStorage() : null;
+    const apiKey = input.model.provider === "replicate" ? getApiKey() : null;
     if (!apiKey) {
       return {
         success: false,
@@ -447,11 +431,11 @@ const replicateProvider: ProviderInterface = {
   },
 
   isConfigured(): boolean {
-    return !!getApiKeyFromStorage();
+    return !!getApiKey();
   },
 
   getApiKey(): string | null {
-    return getApiKeyFromStorage();
+    return getApiKey();
   },
 };
 
