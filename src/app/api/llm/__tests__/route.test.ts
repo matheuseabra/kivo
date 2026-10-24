@@ -311,6 +311,62 @@ describe("/api/llm route", () => {
         },
       });
     });
+
+    it("does not fall back to the operator key in hosted mode", async () => {
+      process.env.KIVO_HOSTED = "true";
+      process.env.KIVO_AUTH_USERNAME = "owner";
+      process.env.KIVO_AUTH_PASSWORD = "secret";
+      process.env.KIVO_TRUST_PROXY_TLS = "true";
+      process.env.GEMINI_API_KEY = "operator-gemini-key";
+      const request = new NextRequest("https://kivo.test/api/llm", {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from("owner:secret").toString("base64")}`,
+          "X-Forwarded-Proto": "https",
+          "X-Forwarded-Host": "kivo.test",
+          Origin: "https://kivo.test",
+          "Sec-Fetch-Site": "same-origin",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ prompt: "Test prompt", provider: "google", model: "gemini-2.5-flash" }),
+      });
+
+      const response = await POST(request);
+      const data = await response.json();
+
+      expect(response.status).toBe(401);
+      expect(data.error).toContain("GEMINI_API_KEY not configured");
+      expect(MockGoogleGenAI.callCount).toBe(0);
+    });
+
+    it("uses the request key in hosted mode", async () => {
+      process.env.KIVO_HOSTED = "true";
+      process.env.KIVO_AUTH_USERNAME = "owner";
+      process.env.KIVO_AUTH_PASSWORD = "secret";
+      process.env.KIVO_TRUST_PROXY_TLS = "true";
+      process.env.GEMINI_API_KEY = "operator-gemini-key";
+      mockGenerateContent.mockResolvedValueOnce({ text: "Hosted response" });
+      const request = new NextRequest("https://kivo.test/api/llm", {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from("owner:secret").toString("base64")}`,
+          "X-Forwarded-Proto": "https",
+          "X-Forwarded-Host": "kivo.test",
+          Origin: "https://kivo.test",
+          "Sec-Fetch-Site": "same-origin",
+          "Content-Type": "application/json",
+          "X-Gemini-API-Key": "user-gemini-key",
+        },
+        body: JSON.stringify({ prompt: "Test prompt", provider: "google", model: "gemini-2.5-flash" }),
+      });
+
+      const response = await POST(request);
+      const data = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.text).toBe("Hosted response");
+      expect(MockGoogleGenAI.lastCalledWith).toEqual({ apiKey: "user-gemini-key" });
+    });
   });
 
   describe("OpenAI provider", () => {

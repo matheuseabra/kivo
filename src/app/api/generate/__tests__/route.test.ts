@@ -887,6 +887,41 @@ describe("/api/generate route", () => {
       expect(mockGenerateContent).toHaveBeenCalled();
     });
 
+    it("requires a user Gemini key in hosted mode and returns 401", async () => {
+      process.env.KIVO_HOSTED = "true";
+      process.env.KIVO_AUTH_USERNAME = "owner";
+      process.env.KIVO_AUTH_PASSWORD = "secret";
+      process.env.KIVO_TRUST_PROXY_TLS = "true";
+      process.env.GEMINI_API_KEY = "operator-gemini-key";
+      const request = new NextRequest("http://kivo.internal/api/generate", {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from("owner:secret").toString("base64")}`,
+          "X-Forwarded-Proto": "https",
+          "X-Forwarded-Host": "kivo.test",
+          Origin: "https://kivo.test",
+          "Sec-Fetch-Site": "same-origin",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: "A landscape",
+          selectedModel: {
+            provider: "gemini",
+            modelId: "nano-banana-pro",
+            displayName: "Nano Banana Pro",
+          },
+        }),
+      });
+
+      const response = await POST(request);
+      const data = await response.json();
+
+      expect(response.status).toBe(401);
+      expect(data.success).toBe(false);
+      expect(data.error).toContain("API key not configured");
+      expect(MockGoogleGenAI.callCount).toBe(0);
+    });
+
     it("should return 401 for Replicate provider without API key", async () => {
       delete process.env.REPLICATE_API_KEY;
 
@@ -1938,6 +1973,41 @@ describe("/api/generate route", () => {
       // Should proceed without key (no 401 early return)
       expect(response.status).toBe(200);
       expect(data.success).toBe(true);
+    });
+
+    it("requires a user fal key in hosted mode without contacting the provider", async () => {
+      process.env.KIVO_HOSTED = "true";
+      process.env.KIVO_AUTH_USERNAME = "owner";
+      process.env.KIVO_AUTH_PASSWORD = "secret";
+      process.env.KIVO_TRUST_PROXY_TLS = "true";
+      process.env.FAL_API_KEY = "operator-fal-key";
+      const request = new NextRequest("http://kivo.internal/api/generate", {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from("owner:secret").toString("base64")}`,
+          "X-Forwarded-Proto": "https",
+          "X-Forwarded-Host": "kivo.test",
+          Origin: "https://kivo.test",
+          "Sec-Fetch-Site": "same-origin",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: "A landscape",
+          selectedModel: {
+            provider: "fal",
+            modelId: "fal-ai/flux/schnell",
+            displayName: "Flux Schnell",
+          },
+        }),
+      });
+
+      const response = await POST(request);
+      const data = await response.json();
+
+      expect(response.status).toBe(401);
+      expect(data.success).toBe(false);
+      expect(data.error).toContain("fal.ai API key required");
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it("should handle rate limit (429) with API key", async () => {

@@ -9,6 +9,8 @@ import { NextRequest, NextResponse } from "next/server";
 import type { GenerateResponse } from "@/types";
 import { checkKieTaskOnce, fetchKieMediaResult, isVeoModel } from "../providers/kie";
 import { buildMediaResponse } from "../route";
+import { resolveProviderApiKey } from "@/lib/server/hosted-access";
+import { withApiRequestGuard } from "@/lib/server/request-guards";
 
 export const maxDuration = 120; // 2 min — enough for media fetch, not for polling
 export const dynamic = 'force-dynamic';
@@ -21,7 +23,17 @@ interface PollRequest {
   mediaType: string;
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest): Promise<Response> {
+  return withApiRequestGuard(request, {
+    bucket: "generate-poll",
+    maxRequests: 120,
+    windowMs: 60_000,
+    maxConcurrent: 8,
+    bodyLimitBytes: 64 * 1024,
+  }, handlePost);
+}
+
+async function handlePost(request: NextRequest) {
   const requestId = Math.random().toString(36).substring(7);
 
   try {
@@ -43,7 +55,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get API key (same pattern as route.ts)
-    const apiKey = request.headers.get("X-Kie-Key") || process.env.KIE_API_KEY;
+    const apiKey = resolveProviderApiKey(request, "kie");
     if (!apiKey) {
       return NextResponse.json<GenerateResponse>(
         { success: false, error: "Kie.ai API key not configured" },

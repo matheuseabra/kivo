@@ -28,6 +28,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { resolveProviderApiKey } from "@/lib/server/hosted-access";
+import { withApiRequestGuard } from "@/lib/server/request-guards";
 import { ProviderType } from "@/types";
 import { ProviderModel, ModelCapability } from "@/lib/providers";
 import {
@@ -1083,7 +1085,16 @@ async function fetchFalModels(
 
 // ============ Main Handler ============
 
-export async function GET(
+export async function GET(request: NextRequest): Promise<Response> {
+  return withApiRequestGuard(request, {
+    bucket: "models-list",
+    maxRequests: 60,
+    windowMs: 60_000,
+    maxConcurrent: 4,
+  }, handleGet);
+}
+
+async function handleGet(
   request: NextRequest
 ): Promise<NextResponse<ModelsResponse>> {
   // Parse query params
@@ -1098,10 +1109,10 @@ export async function GET(
     : null;
 
   // Get API keys from headers, falling back to env variables
-  const replicateKey = request.headers.get("X-Replicate-Key") || process.env.REPLICATE_API_KEY || null;
-  const falKey = request.headers.get("X-Fal-Key") || process.env.FAL_API_KEY || null;
-  const kieKey = request.headers.get("X-Kie-Key") || process.env.KIE_API_KEY || null;
-  const wavespeedKey = request.headers.get("X-WaveSpeed-Key") || process.env.WAVESPEED_API_KEY || null;
+  const replicateKey = resolveProviderApiKey(request, "replicate");
+  const falKey = resolveProviderApiKey(request, "fal");
+  const kieKey = resolveProviderApiKey(request, "kie");
+  const wavespeedKey = resolveProviderApiKey(request, "wavespeed");
 
   // Build list of all available providers (have keys from env or client headers)
   const availableProviders: string[] = ["gemini", "kie"]; // Gemini and Kie hardcoded models are available for listing

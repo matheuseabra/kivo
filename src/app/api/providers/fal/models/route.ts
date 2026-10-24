@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ProviderModel, ModelCapability } from "@/lib/providers";
+import { resolveProviderApiKey } from "@/lib/server/hosted-access";
+import { withApiRequestGuard } from "@/lib/server/request-guards";
 
 const FAL_API_BASE = "https://api.fal.ai/v1";
 
@@ -96,23 +98,27 @@ type ModelsResponse = ModelsSuccessResponse | ModelsErrorResponse;
  * GET /api/providers/fal/models
  *
  * Fetches available models from fal.ai API.
- * API key is optional - fal.ai works without but with rate limits.
+ * Local mode permits keyless requests, subject to fal.ai's rate limits.
  *
  * Headers:
- *   - X-API-Key: API key for authentication (recommended)
- *   - Authorization: Alternative auth header
+ *   - X-Fal-API-Key, X-Fal-Key, or legacy X-API-Key: provider API key
  *
  * Query params:
  *   - search: Optional search query to filter models
  */
 export async function GET(
   request: NextRequest
-): Promise<NextResponse<ModelsResponse>> {
-  // Get API key from header or env (never from query params to avoid credential leakage)
-  const apiKey =
-    request.headers.get("X-API-Key") ||
-    request.headers.get("Authorization")?.replace(/^Key\s+/i, "") ||
-    process.env.FAL_API_KEY;
+): Promise<Response> {
+  return withApiRequestGuard(request, {
+    bucket: "fal-provider-models",
+    maxRequests: 60,
+    windowMs: 60_000,
+    maxConcurrent: 4,
+  }, handleGet);
+}
+
+async function handleGet(request: NextRequest): Promise<NextResponse<ModelsResponse>> {
+  const apiKey = resolveProviderApiKey(request, "fal");
 
   if (!apiKey) {
     return NextResponse.json<ModelsErrorResponse>(

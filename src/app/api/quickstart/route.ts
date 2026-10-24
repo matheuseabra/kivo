@@ -11,6 +11,8 @@ import {
 import { ImageInputNodeData } from "@/types";
 import fs from "fs/promises";
 import path from "path";
+import { isHostedMode, resolveProviderApiKey } from "@/lib/server/hosted-access";
+import { withApiRequestGuard } from "@/lib/server/request-guards";
 
 export const maxDuration = 60; // 1 minute timeout
 
@@ -74,7 +76,17 @@ interface QuickstartResponse {
   error?: string;
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest): Promise<Response> {
+  return withApiRequestGuard(request, {
+    bucket: "quickstart",
+    maxRequests: 10,
+    windowMs: 60_000,
+    maxConcurrent: 2,
+    bodyLimitBytes: 1024 * 1024,
+  }, handlePost);
+}
+
+async function handlePost(request: NextRequest) {
   const requestId = `qs-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
   console.log(`[Quickstart:${requestId}] New request received`);
 
@@ -126,7 +138,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check API key
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = resolveProviderApiKey(request, "gemini");
     if (!apiKey) {
       console.error(`[Quickstart:${requestId}] No GEMINI_API_KEY configured`);
       return NextResponse.json<QuickstartResponse>(
@@ -134,7 +146,7 @@ export async function POST(request: NextRequest) {
           success: false,
           error: "API key not configured. Add GEMINI_API_KEY to .env.local",
         },
-        { status: 500 }
+        { status: isHostedMode() ? 401 : 500 }
       );
     }
 

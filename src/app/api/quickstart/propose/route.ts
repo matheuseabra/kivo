@@ -3,6 +3,8 @@ import { GoogleGenAI } from "@google/genai";
 import { buildProposalPrompt } from "@/lib/quickstart/proposalPrompt";
 import { parseJSONFromResponse } from "@/lib/quickstart/validation";
 import type { WorkflowProposal, WorkflowComplexity, NodeType } from "@/types";
+import { isHostedMode, resolveProviderApiKey } from "@/lib/server/hosted-access";
+import { withApiRequestGuard } from "@/lib/server/request-guards";
 
 export const maxDuration = 60; // 1 minute timeout
 
@@ -160,7 +162,17 @@ function validateProposalShape(data: unknown): string | null {
   return null; // Valid
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest): Promise<Response> {
+  return withApiRequestGuard(request, {
+    bucket: "quickstart-propose",
+    maxRequests: 10,
+    windowMs: 60_000,
+    maxConcurrent: 2,
+    bodyLimitBytes: 1024 * 1024,
+  }, handlePost);
+}
+
+async function handlePost(request: NextRequest) {
   const requestId = `prop-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
   console.log(`[Propose:${requestId}] New request received`);
 
@@ -191,7 +203,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check API key
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = resolveProviderApiKey(request, "gemini");
     if (!apiKey) {
       console.error(`[Propose:${requestId}] No GEMINI_API_KEY configured`);
       return NextResponse.json<ProposeResponse>(
@@ -199,7 +211,7 @@ export async function POST(request: NextRequest) {
           success: false,
           error: "API key not configured. Add GEMINI_API_KEY to .env.local",
         },
-        { status: 500 }
+        { status: isHostedMode() ? 401 : 500 }
       );
     }
 

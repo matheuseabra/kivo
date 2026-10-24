@@ -24,6 +24,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { ProviderType } from "@/types";
+import { resolveProviderApiKey } from "@/lib/server/hosted-access";
+import { withApiRequestGuard } from "@/lib/server/request-guards";
 import { ModelParameter, ModelInput } from "@/lib/providers/types";
 import {
   getCachedWaveSpeedSchema,
@@ -1474,9 +1476,23 @@ function extractWaveSpeedSchema(
   return extractParametersFromSchema(requestSchema as Record<string, unknown>);
 }
 
+type RouteContext = { params: Promise<{ modelId: string }> };
+
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ modelId: string }> }
+  context: RouteContext
+): Promise<Response> {
+  return withApiRequestGuard(request, {
+    bucket: "model-schema",
+    maxRequests: 60,
+    windowMs: 60_000,
+    maxConcurrent: 4,
+  }, (guardedRequest) => handleGet(guardedRequest, context));
+}
+
+async function handleGet(
+  request: NextRequest,
+  { params }: RouteContext
 ): Promise<NextResponse<SchemaResponse>> {
   // Await params before accessing properties
   const { modelId } = await params;
@@ -1521,7 +1537,7 @@ export async function GET(
       }
     } else if (provider === "replicate") {
       // User-provided key takes precedence over env variable
-      const apiKey = request.headers.get("X-Replicate-Key") || process.env.REPLICATE_API_KEY;
+      const apiKey = resolveProviderApiKey(request, "replicate");
       if (!apiKey) {
         return NextResponse.json<SchemaErrorResponse>(
           {
@@ -1537,11 +1553,11 @@ export async function GET(
       result = getKieSchema(decodedModelId);
     } else if (provider === "wavespeed") {
       // WaveSpeed uses dynamic schemas from API, with static fallback
-      const apiKey = request.headers.get("X-WaveSpeed-Key") || process.env.WAVESPEED_API_KEY || null;
+      const apiKey = resolveProviderApiKey(request, "wavespeed");
       result = await fetchWaveSpeedSchema(decodedModelId, apiKey);
     } else {
       // User-provided key takes precedence over env variable
-      const apiKey = request.headers.get("X-Fal-Key") || process.env.FAL_API_KEY || null;
+      const apiKey = resolveProviderApiKey(request, "fal");
 
       // If no fal.ai API key, allow returning hardcoded schema for known models
       if (!apiKey) {
