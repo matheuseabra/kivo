@@ -6,6 +6,7 @@ import { Header } from "@/components/Header";
 const mockSetWorkflowMetadata = vi.fn();
 const mockSaveToFile = vi.fn();
 const mockLoadWorkflow = vi.fn();
+const mockSetShowQuickstart = vi.fn();
 const mockUseWorkflowStore = vi.fn();
 
 vi.mock("@/store/workflowStore", () => ({
@@ -53,6 +54,7 @@ const createDefaultState = (overrides = {}) => ({
   setWorkflowMetadata: mockSetWorkflowMetadata,
   saveToFile: mockSaveToFile,
   loadWorkflow: mockLoadWorkflow,
+  setShowQuickstart: mockSetShowQuickstart,
   getNodesWithComments: mockGetNodesWithComments,
   getUnviewedCommentCount: mockGetUnviewedCommentCount,
   viewedCommentNodeIds: new Set<string>(),
@@ -259,6 +261,7 @@ describe("Header", () => {
       const modal = screen.getByTestId("project-setup-modal");
       expect(modal).toBeInTheDocument();
       expect(modal).toHaveAttribute("data-mode", "new");
+      expect(mockSetShowQuickstart).toHaveBeenCalledWith(false);
     });
   });
 
@@ -328,6 +331,7 @@ describe("Header", () => {
       const modal = screen.getByTestId("project-setup-modal");
       expect(modal).toBeInTheDocument();
       expect(modal).toHaveAttribute("data-mode", "settings");
+      expect(mockSetShowQuickstart).toHaveBeenCalledWith(false);
     });
   });
 

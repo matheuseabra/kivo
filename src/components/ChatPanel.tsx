@@ -1,10 +1,11 @@
 "use client";
 
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import ReactMarkdown from "react-markdown";
 import { EditOperation } from "@/lib/chat/editOperations";
+import { createChatPanelFetch } from "@/lib/chat/createChatPanelFetch";
 
 interface ChatPanelProps {
   isOpen: boolean;
@@ -32,24 +33,9 @@ export function ChatPanel({ isOpen, onClose, onBuildWorkflow, isBuildingWorkflow
   const selectedNodeIdsRef = useRef(selectedNodeIds);
   selectedNodeIdsRef.current = selectedNodeIds;
 
-  // Stable fetch function that reads workflowState and selectedNodeIds from ref
-  const customFetch = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
-    if (!init?.body) {
-      return fetch(input, init);
-    }
-
-    const body = JSON.parse(init.body as string);
-    const bodyWithWorkflow = {
-      ...body,
-      workflowState: workflowStateRef.current,
-      selectedNodeIds: selectedNodeIdsRef.current,
-    };
-
-    return fetch(input, {
-      ...init,
-      body: JSON.stringify(bodyWithWorkflow),
-    });
-  }, []);
+  const [customFetch] = useState(() =>
+    createChatPanelFetch(workflowStateRef, selectedNodeIdsRef)
+  );
 
   const [transport] = useState(() => new DefaultChatTransport({ api: "/api/chat", fetch: customFetch }));
 

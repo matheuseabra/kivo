@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { PromptWorkflowView } from "@/components/quickstart/PromptWorkflowView";
 import { WorkflowFile } from "@/store/workflowStore";
+import { setProviderApiKey } from "@/store/utils/providerCredentials";
 
 // Mock fetch
 const mockFetch = vi.fn();
@@ -13,6 +14,7 @@ describe("PromptWorkflowView", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    setProviderApiKey("gemini", null);
     mockFetch.mockImplementation(() => {
       return Promise.resolve({
         ok: true,
@@ -23,6 +25,7 @@ describe("PromptWorkflowView", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    setProviderApiKey("gemini", null);
   });
 
   describe("Basic Rendering", () => {
@@ -194,6 +197,28 @@ describe("PromptWorkflowView", () => {
   });
 
   describe("Workflow Generation", () => {
+    it("sends the current Gemini key with each request", async () => {
+      render(
+        <PromptWorkflowView
+          onBack={mockOnBack}
+          onWorkflowGenerated={mockOnWorkflowGenerated}
+        />
+      );
+      fireEvent.change(screen.getByPlaceholderText(/Create product photography/i), {
+        target: { value: "Create a workflow" },
+      });
+
+      setProviderApiKey("gemini", "first-tab-key");
+      await act(async () => fireEvent.click(screen.getByText("Generate Workflow")));
+      setProviderApiKey("gemini", "latest-tab-key");
+      await act(async () => fireEvent.click(screen.getByText("Generate Workflow")));
+
+      const firstHeaders = new Headers(mockFetch.mock.calls[0][1].headers);
+      const latestHeaders = new Headers(mockFetch.mock.calls[1][1].headers);
+      expect(firstHeaders.get("X-Gemini-API-Key")).toBe("first-tab-key");
+      expect(latestHeaders.get("X-Gemini-API-Key")).toBe("latest-tab-key");
+    });
+
     it("should call API when generate is clicked with valid input", async () => {
       const mockWorkflow: WorkflowFile = {
         id: "generated-id",

@@ -25,6 +25,7 @@ import {
   saveCanvasNavigationSettings,
 } from "../localStorage";
 import { defaultCanvasNavigationSettings } from "@/types";
+import { getProviderApiKey, setProviderApiKey } from "../providerCredentials";
 
 // Mock localStorage
 const localStorageMock = (() => {
@@ -52,6 +53,9 @@ describe("localStorage utilities", () => {
   beforeEach(() => {
     localStorageMock.clear();
     vi.clearAllMocks();
+    for (const providerId of ["gemini", "openai", "anthropic", "replicate", "fal", "kie", "wavespeed"] as const) {
+      setProviderApiKey(providerId, null);
+    }
   });
 
   describe("loadSaveConfigs", () => {
@@ -253,6 +257,9 @@ describe("localStorage utilities", () => {
       const result = getProviderSettings();
       // Should have the stored gemini settings
       expect(result.providers.gemini.apiKey).toBe("test-key");
+      expect(getProviderApiKey("gemini")).toBe("test-key");
+      expect(JSON.stringify(localStorageMock.getItem(PROVIDER_SETTINGS_KEY))).not.toContain("test-key");
+      expect(JSON.parse(localStorageMock.getItem(PROVIDER_SETTINGS_KEY)!).providers.gemini).not.toHaveProperty("apiKey");
       // Should also have the default providers that were missing
       expect(result.providers.replicate).toBeDefined();
       expect(result.providers.fal).toBeDefined();
@@ -267,7 +274,7 @@ describe("localStorage utilities", () => {
   });
 
   describe("saveProviderSettings", () => {
-    it("stores provider settings", () => {
+    it("keeps provider keys in memory and stores only non-secret settings", () => {
       const settings = {
         providers: {
           gemini: { id: "gemini", name: "Gemini", enabled: true, apiKey: "key123" },
@@ -277,7 +284,22 @@ describe("localStorage utilities", () => {
       saveProviderSettings(settings as any);
 
       const stored = JSON.parse(localStorageMock.getItem(PROVIDER_SETTINGS_KEY)!);
-      expect(stored).toEqual(settings);
+      expect(stored.providers.gemini).toEqual({ id: "gemini", name: "Gemini", enabled: true });
+      expect(JSON.stringify(stored)).not.toContain("key123");
+      expect(getProviderApiKey("gemini")).toBe("key123");
+    });
+
+    it("clears a provider key from tab memory without saving it", () => {
+      setProviderApiKey("gemini", "temporary-key");
+      saveProviderSettings({
+        providers: {
+          ...defaultProviderSettings.providers,
+          gemini: { ...defaultProviderSettings.providers.gemini, apiKey: null },
+        },
+      });
+
+      expect(getProviderApiKey("gemini")).toBeNull();
+      expect(JSON.stringify(localStorageMock.getItem(PROVIDER_SETTINGS_KEY))).not.toContain("temporary-key");
     });
   });
 

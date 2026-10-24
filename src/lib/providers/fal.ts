@@ -24,9 +24,9 @@ import {
   GenerationOutput,
   registerProvider,
 } from "@/lib/providers";
+import { getProviderApiKey } from "@/store/utils/providerCredentials";
 
 const FAL_API_BASE = "https://api.fal.ai/v1";
-const PROVIDER_SETTINGS_KEY = "node-banana-provider-settings";
 
 /**
  * Categories we care about for image/video generation
@@ -82,24 +82,8 @@ interface FalGenerationResponse {
   output?: string;
 }
 
-/**
- * Get API key from localStorage (client-side only)
- * Returns null when running on server or if not configured
- */
-function getApiKeyFromStorage(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const settingsJson = localStorage.getItem(PROVIDER_SETTINGS_KEY);
-    if (!settingsJson) return null;
-
-    const settings = JSON.parse(settingsJson);
-    return settings?.providers?.fal?.apiKey ?? null;
-  } catch {
-    return null;
-  }
+function getApiKey(): string | null {
+  return getProviderApiKey("fal");
 }
 
 /**
@@ -155,7 +139,7 @@ const falProvider: ProviderInterface = {
   name: "fal.ai",
 
   async listModels(): Promise<ProviderModel[]> {
-    const apiKey = getApiKeyFromStorage();
+    const apiKey = getApiKey();
 
     try {
       // Fetch all active models, filter client-side
@@ -180,7 +164,7 @@ const falProvider: ProviderInterface = {
   },
 
   async searchModels(query: string): Promise<ProviderModel[]> {
-    const apiKey = getApiKeyFromStorage();
+    const apiKey = getApiKey();
 
     try {
       // Search with query, filter client-side
@@ -205,7 +189,7 @@ const falProvider: ProviderInterface = {
   },
 
   async getModel(modelId: string): Promise<ProviderModel | null> {
-    const apiKey = getApiKeyFromStorage();
+    const apiKey = getApiKey();
 
     try {
       // Fetch specific model by endpoint_id
@@ -243,7 +227,7 @@ const falProvider: ProviderInterface = {
   },
 
   async generate(input: GenerationInput): Promise<GenerationOutput> {
-    const apiKey = getApiKeyFromStorage();
+    const apiKey = getApiKey();
     // Note: fal.ai works without API key but with rate limits
 
     try {
@@ -338,11 +322,11 @@ const falProvider: ProviderInterface = {
   isConfigured(): boolean {
     // fal.ai works without API key (with rate limits)
     // Return true if key exists, but note that provider is usable without it
-    return !!getApiKeyFromStorage();
+    return !!getApiKey();
   },
 
   getApiKey(): string | null {
-    return getApiKeyFromStorage();
+    return getApiKey();
   },
 };
 

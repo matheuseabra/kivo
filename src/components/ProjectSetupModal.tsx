@@ -94,6 +94,18 @@ interface ProjectSetupModalProps {
   mode: "new" | "settings";
 }
 
+function getProviderKeyStatus(
+  providerId: ProviderType,
+  draft: ProviderSettings,
+  current: ProviderSettings
+): string | null {
+  const key = draft.providers[providerId]?.apiKey;
+  if (!key) return null;
+  return key === current.providers[providerId]?.apiKey
+    ? "Saved for this tab · not verified"
+    : "Not saved yet · not verified";
+}
+
 export function ProjectSetupModal({
   isOpen,
   onClose,
@@ -448,6 +460,12 @@ export function ProjectSetupModal({
     }));
   };
 
+  const clearProviderKey = (providerId: ProviderType) => {
+    updateLocalProvider(providerId, { apiKey: null });
+    updateProviderApiKey(providerId, null);
+    setOverrideActive((prev) => ({ ...prev, [providerId]: false }));
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -633,7 +651,7 @@ export function ProjectSetupModal({
                 <span className="text-sm font-medium text-neutral-100">Google Gemini</span>
                 {envStatus?.gemini && !overrideActive.gemini ? (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-green-400">Configured via .env</span>
+                    <span className="text-xs text-green-400">Server key configured · not verified</span>
                     <button
                       type="button"
                       onClick={() => setOverrideActive((prev) => ({ ...prev, gemini: true }))}
@@ -658,6 +676,7 @@ export function ProjectSetupModal({
                     >
                       {showApiKey.gemini ? "Hide" : "Show"}
                     </button>
+                    <button type="button" hidden={!localProviders.providers.gemini?.apiKey} aria-label="Clear Google Gemini API key" onClick={() => clearProviderKey("gemini")} className="text-xs text-neutral-400 hover:text-neutral-200">Clear</button>
                     {envStatus?.gemini && (
                       <button
                         type="button"
@@ -673,6 +692,7 @@ export function ProjectSetupModal({
                   </div>
                 )}
               </div>
+              <p hidden={!getProviderKeyStatus("gemini", localProviders, providerSettings)} className="mt-2 text-xs text-neutral-400">{getProviderKeyStatus("gemini", localProviders, providerSettings) ?? ""}</p>
             </div>
 
             {/* OpenAI Provider */}
@@ -681,7 +701,7 @@ export function ProjectSetupModal({
                 <span className="text-sm font-medium text-neutral-100">OpenAI</span>
                 {envStatus?.openai && !overrideActive.openai ? (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-green-400">Configured via .env</span>
+                    <span className="text-xs text-green-400">Server key configured · not verified</span>
                     <button
                       type="button"
                       onClick={() => setOverrideActive((prev) => ({ ...prev, openai: true }))}
@@ -706,6 +726,7 @@ export function ProjectSetupModal({
                     >
                       {showApiKey.openai ? "Hide" : "Show"}
                     </button>
+                    <button type="button" hidden={!localProviders.providers.openai?.apiKey} aria-label="Clear OpenAI API key" onClick={() => clearProviderKey("openai")} className="text-xs text-neutral-400 hover:text-neutral-200">Clear</button>
                     {envStatus?.openai && (
                       <button
                         type="button"
@@ -721,6 +742,7 @@ export function ProjectSetupModal({
                   </div>
                 )}
               </div>
+              <p hidden={!getProviderKeyStatus("openai", localProviders, providerSettings)} className="mt-2 text-xs text-neutral-400">{getProviderKeyStatus("openai", localProviders, providerSettings) ?? ""}</p>
             </div>
 
             {/* Anthropic Provider */}
@@ -729,7 +751,7 @@ export function ProjectSetupModal({
                 <span className="text-sm font-medium text-neutral-100">Anthropic</span>
                 {envStatus?.anthropic && !overrideActive.anthropic ? (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-green-400">Configured via .env</span>
+                    <span className="text-xs text-green-400">Server key configured · not verified</span>
                     <button
                       type="button"
                       onClick={() => setOverrideActive((prev) => ({ ...prev, anthropic: true }))}
@@ -754,6 +776,7 @@ export function ProjectSetupModal({
                     >
                       {showApiKey.anthropic ? "Hide" : "Show"}
                     </button>
+                    <button type="button" hidden={!localProviders.providers.anthropic?.apiKey} aria-label="Clear Anthropic API key" onClick={() => clearProviderKey("anthropic")} className="text-xs text-neutral-400 hover:text-neutral-200">Clear</button>
                     {envStatus?.anthropic && (
                       <button
                         type="button"
@@ -769,6 +792,7 @@ export function ProjectSetupModal({
                   </div>
                 )}
               </div>
+              <p hidden={!getProviderKeyStatus("anthropic", localProviders, providerSettings)} className="mt-2 text-xs text-neutral-400">{getProviderKeyStatus("anthropic", localProviders, providerSettings) ?? ""}</p>
             </div>
 
             {/* Replicate Provider */}
@@ -777,7 +801,7 @@ export function ProjectSetupModal({
                 <span className="text-sm font-medium text-neutral-100">Replicate</span>
                 {envStatus?.replicate && !overrideActive.replicate ? (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-green-400">Configured via .env</span>
+                    <span className="text-xs text-green-400">Server key configured · not verified</span>
                     <button
                       type="button"
                       onClick={() => setOverrideActive((prev) => ({ ...prev, replicate: true }))}
@@ -802,6 +826,7 @@ export function ProjectSetupModal({
                     >
                       {showApiKey.replicate ? "Hide" : "Show"}
                     </button>
+                    <button type="button" hidden={!localProviders.providers.replicate?.apiKey} aria-label="Clear Replicate API key" onClick={() => clearProviderKey("replicate")} className="text-xs text-neutral-400 hover:text-neutral-200">Clear</button>
                     {envStatus?.replicate && (
                       <button
                         type="button"
@@ -817,6 +842,7 @@ export function ProjectSetupModal({
                   </div>
                 )}
               </div>
+              <p hidden={!getProviderKeyStatus("replicate", localProviders, providerSettings)} className="mt-2 text-xs text-neutral-400">{getProviderKeyStatus("replicate", localProviders, providerSettings) ?? ""}</p>
             </div>
 
             {/* fal.ai Provider */}
@@ -825,7 +851,7 @@ export function ProjectSetupModal({
                 <span className="text-sm font-medium text-neutral-100">fal.ai</span>
                 {envStatus?.fal && !overrideActive.fal ? (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-green-400">Configured via .env</span>
+                    <span className="text-xs text-green-400">Server key configured · not verified</span>
                     <button
                       type="button"
                       onClick={() => setOverrideActive((prev) => ({ ...prev, fal: true }))}
@@ -850,6 +876,7 @@ export function ProjectSetupModal({
                     >
                       {showApiKey.fal ? "Hide" : "Show"}
                     </button>
+                    <button type="button" hidden={!localProviders.providers.fal?.apiKey} aria-label="Clear fal.ai API key" onClick={() => clearProviderKey("fal")} className="text-xs text-neutral-400 hover:text-neutral-200">Clear</button>
                     {envStatus?.fal && (
                       <button
                         type="button"
@@ -865,6 +892,7 @@ export function ProjectSetupModal({
                   </div>
                 )}
               </div>
+              <p hidden={!getProviderKeyStatus("fal", localProviders, providerSettings)} className="mt-2 text-xs text-neutral-400">{getProviderKeyStatus("fal", localProviders, providerSettings) ?? ""}</p>
             </div>
 
             {/* Kie.ai Provider */}
@@ -873,7 +901,7 @@ export function ProjectSetupModal({
                 <span className="text-sm font-medium text-neutral-100">Kie.ai</span>
                 {envStatus?.kie && !overrideActive.kie ? (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-green-400">Configured via .env</span>
+                    <span className="text-xs text-green-400">Server key configured · not verified</span>
                     <button
                       type="button"
                       onClick={() => setOverrideActive((prev) => ({ ...prev, kie: true }))}
@@ -898,6 +926,7 @@ export function ProjectSetupModal({
                     >
                       {showApiKey.kie ? "Hide" : "Show"}
                     </button>
+                    <button type="button" hidden={!localProviders.providers.kie?.apiKey} aria-label="Clear Kie.ai API key" onClick={() => clearProviderKey("kie")} className="text-xs text-neutral-400 hover:text-neutral-200">Clear</button>
                     {envStatus?.kie && (
                       <button
                         type="button"
@@ -913,6 +942,7 @@ export function ProjectSetupModal({
                   </div>
                 )}
               </div>
+              <p hidden={!getProviderKeyStatus("kie", localProviders, providerSettings)} className="mt-2 text-xs text-neutral-400">{getProviderKeyStatus("kie", localProviders, providerSettings) ?? ""}</p>
             </div>
 
             {/* WaveSpeed Provider */}
@@ -921,7 +951,7 @@ export function ProjectSetupModal({
                 <span className="text-sm font-medium text-neutral-100">WaveSpeed</span>
                 {envStatus?.wavespeed && !overrideActive.wavespeed ? (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-green-400">Configured via .env</span>
+                    <span className="text-xs text-green-400">Server key configured · not verified</span>
                     <button
                       type="button"
                       onClick={() => setOverrideActive((prev) => ({ ...prev, wavespeed: true }))}
@@ -946,6 +976,7 @@ export function ProjectSetupModal({
                     >
                       {showApiKey.wavespeed ? "Hide" : "Show"}
                     </button>
+                    <button type="button" hidden={!localProviders.providers.wavespeed?.apiKey} aria-label="Clear WaveSpeed API key" onClick={() => clearProviderKey("wavespeed")} className="text-xs text-neutral-400 hover:text-neutral-200">Clear</button>
                     {envStatus?.wavespeed && (
                       <button
                         type="button"
@@ -961,10 +992,11 @@ export function ProjectSetupModal({
                   </div>
                 )}
               </div>
+              <p hidden={!getProviderKeyStatus("wavespeed", localProviders, providerSettings)} className="mt-2 text-xs text-neutral-400">{getProviderKeyStatus("wavespeed", localProviders, providerSettings) ?? ""}</p>
             </div>
 
             <p className="text-xs text-neutral-400 mt-2">
-              Add API keys via <code className="px-1 py-0.5 bg-neutral-800 rounded">.env.local</code> for better security. Keys added here override .env and are stored in your browser.
+              Keys entered here stay in this tab&apos;s memory and are removed on reload or close. This screen does not verify keys. In local mode, server keys can also be configured in <code className="px-1 py-0.5 bg-neutral-800 rounded">.env.local</code>.
             </p>
           </div>
         )}

@@ -10,6 +10,7 @@ import {
   CanvasNavigationSettings,
   defaultCanvasNavigationSettings,
 } from "@/types";
+import { getProviderApiKey, setProviderApiKey } from "./providerCredentials";
 
 // Storage keys
 export const STORAGE_KEY = "node-banana-workflow-configs";
@@ -125,27 +126,63 @@ export const saveGenerateImageDefaults = (settings: Partial<GenerateImageDefault
 export const getProviderSettings = (): ProviderSettings => {
   if (typeof window === "undefined") return defaultProviderSettings;
   const stored = localStorage.getItem(PROVIDER_SETTINGS_KEY);
+  let settings = defaultProviderSettings;
   if (stored) {
     try {
       const parsed = JSON.parse(stored) as ProviderSettings;
       // Merge with defaults to handle new providers added after user saved settings
-      return {
+      settings = {
         providers: {
           ...defaultProviderSettings.providers,
           ...parsed.providers,
         }
       };
+      const storedProviders = parsed.providers ?? {};
+      if (Object.values(storedProviders).some((provider) => provider?.apiKey !== undefined)) {
+        for (const [providerId, provider] of Object.entries(storedProviders)) {
+          if (provider?.apiKey) {
+            setProviderApiKey(providerId as keyof ProviderSettings["providers"], provider.apiKey);
+          }
+        }
+        localStorage.setItem(PROVIDER_SETTINGS_KEY, JSON.stringify(stripProviderKeys(parsed)));
+      }
     } catch {
-      return defaultProviderSettings;
+      settings = defaultProviderSettings;
     }
   }
-  return defaultProviderSettings;
+  return withMemoryKeys(settings);
 };
 
 export const saveProviderSettings = (settings: ProviderSettings): void => {
   if (typeof window === "undefined") return;
-  localStorage.setItem(PROVIDER_SETTINGS_KEY, JSON.stringify(settings));
+  for (const [providerId, provider] of Object.entries(settings.providers)) {
+    if (provider.apiKey !== undefined) {
+      setProviderApiKey(providerId as keyof ProviderSettings["providers"], provider.apiKey);
+    }
+  }
+  localStorage.setItem(PROVIDER_SETTINGS_KEY, JSON.stringify(stripProviderKeys(settings)));
 };
+
+function stripProviderKeys(settings: ProviderSettings): ProviderSettings {
+  const providers = Object.fromEntries(
+    Object.entries(settings.providers).map(([providerId, provider]) => {
+      const saved = { ...provider } as Record<string, unknown>;
+      delete saved.apiKey;
+      return [providerId, saved];
+    })
+  );
+  return { providers } as unknown as ProviderSettings;
+}
+
+function withMemoryKeys(settings: ProviderSettings): ProviderSettings {
+  const providers = Object.fromEntries(
+    Object.entries(settings.providers).map(([providerId, provider]) => [
+      providerId,
+      { ...provider, apiKey: getProviderApiKey(providerId as keyof ProviderSettings["providers"]) },
+    ])
+  );
+  return { providers } as ProviderSettings;
+}
 
 // Recent models helpers
 export const getRecentModels = (): RecentModel[] => {

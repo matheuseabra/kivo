@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { WorkflowFile } from "@/store/workflowStore";
+import { addProviderApiKeyHeader } from "@/store/utils/providerCredentials";
 import { QuickstartBackButton } from "./QuickstartBackButton";
 
 interface PromptWorkflowViewProps {
@@ -29,7 +30,7 @@ export function PromptWorkflowView({
     try {
       const response = await fetch("/api/quickstart", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: addProviderApiKeyHeader("gemini", { "Content-Type": "application/json" }),
         body: JSON.stringify({
           description: description.trim(),
           contentLevel: "full",

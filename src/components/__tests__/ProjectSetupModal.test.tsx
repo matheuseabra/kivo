@@ -989,7 +989,36 @@ describe("ProjectSetupModal", () => {
       });
     });
 
-    it("should show 'Configured via .env' when provider has env key", async () => {
+    it("should clear a saved tab key immediately", async () => {
+      const providerSettings = {
+        providers: {
+          ...defaultProviderSettings.providers,
+          gemini: { ...defaultProviderSettings.providers.gemini, apiKey: "old-tab-key" },
+        },
+      };
+      mockUseWorkflowStore.mockImplementation((selector) => {
+        return selector(createDefaultState({ providerSettings }));
+      });
+
+      render(
+        <ProjectSetupModal
+          isOpen={true}
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+          mode="settings"
+        />
+      );
+      fireEvent.click(screen.getByText("Providers"));
+
+      await waitFor(() => expect(screen.getAllByText("Clear").length).toBeGreaterThan(0));
+      expect(screen.getByText("Saved for this tab · not verified")).toBeInTheDocument();
+      fireEvent.click(screen.getAllByText("Clear")[0]);
+
+      expect(mockUpdateProviderApiKey).toHaveBeenCalledWith("gemini", null);
+      expect(screen.getByPlaceholderText("AIza...")).toHaveValue("");
+    });
+
+    it("should report a server key as configured but not verified", async () => {
       mockFetch.mockImplementation((url: string) => {
         if (url === "/api/env-status") {
           return Promise.resolve({
@@ -1012,7 +1041,7 @@ describe("ProjectSetupModal", () => {
       fireEvent.click(screen.getByText("Providers"));
 
       await waitFor(() => {
-        expect(screen.getByText("Configured via .env")).toBeInTheDocument();
+        expect(screen.getByText("Server key configured · not verified")).toBeInTheDocument();
       });
     });
 
