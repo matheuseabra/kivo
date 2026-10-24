@@ -887,6 +887,41 @@ describe("/api/generate route", () => {
       expect(mockGenerateContent).toHaveBeenCalled();
     });
 
+    it("requires a user Gemini key in hosted mode and returns 401", async () => {
+      process.env.KIVO_HOSTED = "true";
+      process.env.KIVO_AUTH_USERNAME = "owner";
+      process.env.KIVO_AUTH_PASSWORD = "secret";
+      process.env.KIVO_TRUST_PROXY_TLS = "true";
+      process.env.GEMINI_API_KEY = "operator-gemini-key";
+      const request = new NextRequest("http://kivo.internal/api/generate", {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from("owner:secret").toString("base64")}`,
+          "X-Forwarded-Proto": "https",
+          "X-Forwarded-Host": "kivo.test",
+          Origin: "https://kivo.test",
+          "Sec-Fetch-Site": "same-origin",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: "A landscape",
+          selectedModel: {
+            provider: "gemini",
+            modelId: "nano-banana-pro",
+            displayName: "Nano Banana Pro",
+          },
+        }),
+      });
+
+      const response = await POST(request);
+      const data = await response.json();
+
+      expect(response.status).toBe(401);
+      expect(data.success).toBe(false);
+      expect(data.error).toContain("API key not configured");
+      expect(MockGoogleGenAI.callCount).toBe(0);
+    });
+
     it("should return 401 for Replicate provider without API key", async () => {
       delete process.env.REPLICATE_API_KEY;
 

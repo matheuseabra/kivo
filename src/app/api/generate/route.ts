@@ -471,7 +471,7 @@ async function handlePost(request: NextRequest) {
           success: false,
           error: "API key not configured. Add GEMINI_API_KEY to .env.local or configure in Settings.",
         },
-        { status: 500 }
+        { status: isHostedMode() ? 401 : 500 }
       );
     }
 
