@@ -2243,7 +2243,7 @@ describe("/api/generate route", () => {
 
       // Find the queue submit call (the one to queue.fal.run)
       const queueSubmitCall = mockFetch.mock.calls.find(
-        (call: [string, ...unknown[]]) => typeof call[0] === "string" && call[0].includes("queue.fal.run") && !call[0].includes("/requests/")
+        (call: unknown[]) => typeof call[0] === "string" && call[0].includes("queue.fal.run") && !call[0].includes("/requests/")
       );
       expect(queueSubmitCall).toBeDefined();
       const requestBody = JSON.parse((queueSubmitCall![1] as { body: string }).body);
@@ -2297,7 +2297,7 @@ describe("/api/generate route", () => {
 
       // Find the queue submit call
       const queueSubmitCall = mockFetch.mock.calls.find(
-        (call: [string, ...unknown[]]) => typeof call[0] === "string" && call[0].includes("queue.fal.run") && !call[0].includes("/requests/")
+        (call: unknown[]) => typeof call[0] === "string" && call[0].includes("queue.fal.run") && !call[0].includes("/requests/")
       );
       expect(queueSubmitCall).toBeDefined();
       const requestBody = JSON.parse((queueSubmitCall![1] as { body: string }).body);
@@ -2394,7 +2394,7 @@ describe("/api/generate route", () => {
 
       // Find the queue submit call
       const queueSubmitCall = mockFetch.mock.calls.find(
-        (call: [string, ...unknown[]]) => typeof call[0] === "string" && call[0].includes("queue.fal.run") && !call[0].includes("/requests/")
+        (call: unknown[]) => typeof call[0] === "string" && call[0].includes("queue.fal.run") && !call[0].includes("/requests/")
       );
       expect(queueSubmitCall).toBeDefined();
       const requestBody = JSON.parse((queueSubmitCall![1] as { body: string }).body);
@@ -2449,7 +2449,7 @@ describe("/api/generate route", () => {
 
       // Find the queue submit call
       const queueSubmitCall = mockFetch.mock.calls.find(
-        (call: [string, ...unknown[]]) => typeof call[0] === "string" && call[0].includes("queue.fal.run") && !call[0].includes("/requests/")
+        (call: unknown[]) => typeof call[0] === "string" && call[0].includes("queue.fal.run") && !call[0].includes("/requests/")
       );
       expect(queueSubmitCall).toBeDefined();
       const requestBody = JSON.parse((queueSubmitCall![1] as { body: string }).body);
@@ -2523,7 +2523,7 @@ describe("/api/generate route", () => {
 
       // Find the queue submit call
       const queueSubmitCall = mockFetch.mock.calls.find(
-        (call: [string, ...unknown[]]) => typeof call[0] === "string" && call[0].includes("queue.fal.run") && !call[0].includes("/requests/")
+        (call: unknown[]) => typeof call[0] === "string" && call[0].includes("queue.fal.run") && !call[0].includes("/requests/")
       );
       expect(queueSubmitCall).toBeDefined();
       const requestBody = JSON.parse((queueSubmitCall![1] as { body: string }).body);
@@ -2593,7 +2593,7 @@ describe("/api/generate route", () => {
 
       // Find the queue submit call
       const queueSubmitCall = mockFetch.mock.calls.find(
-        (call: [string, ...unknown[]]) => typeof call[0] === "string" && call[0].includes("queue.fal.run") && !call[0].includes("/requests/")
+        (call: unknown[]) => typeof call[0] === "string" && call[0].includes("queue.fal.run") && !call[0].includes("/requests/")
       );
       expect(queueSubmitCall).toBeDefined();
       const requestBody = JSON.parse((queueSubmitCall![1] as { body: string }).body);
@@ -2674,7 +2674,7 @@ describe("/api/generate route", () => {
 
       // Find the queue submit call
       const queueSubmitCall = mockFetch.mock.calls.find(
-        (call: [string, ...unknown[]]) => typeof call[0] === "string" && call[0].includes("queue.fal.run") && !call[0].includes("/requests/")
+        (call: unknown[]) => typeof call[0] === "string" && call[0].includes("queue.fal.run") && !call[0].includes("/requests/")
       );
       expect(queueSubmitCall).toBeDefined();
       const requestBody = JSON.parse((queueSubmitCall![1] as { body: string }).body);

@@ -44,6 +44,7 @@ describe("PromptNode", () => {
       prompt: "",
     },
     selected: false,
+    draggable: false,
     isConnectable: true,
     positionAbsoluteX: 0,
     positionAbsoluteY: 0,

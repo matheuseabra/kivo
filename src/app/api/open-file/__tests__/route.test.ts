@@ -14,7 +14,7 @@ vi.mock(import("child_process"), async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,
-    execFile: vi.fn(),
+    execFile: vi.fn() as unknown as typeof actual.execFile,
   };
 });
 
@@ -22,7 +22,7 @@ vi.mock(import("util"), async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,
-    promisify: () => mockExecFileAsync,
+    promisify: (() => mockExecFileAsync) as unknown as typeof actual.promisify,
   };
 });
 

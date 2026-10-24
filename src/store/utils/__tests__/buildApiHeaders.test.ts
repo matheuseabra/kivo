@@ -13,7 +13,7 @@ function makeSettings(overrides: Partial<Record<string, { apiKey: string | null 
   };
   for (const [key, val] of Object.entries(overrides)) {
     if (defaults[key]) {
-      defaults[key].apiKey = val.apiKey;
+      defaults[key].apiKey = val?.apiKey ?? null;
     }
   }
   return { providers: defaults } as unknown as ProviderSettings;

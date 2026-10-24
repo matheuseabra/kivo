@@ -70,6 +70,7 @@ describe("ImageInputNode", () => {
       dimensions: null,
     },
     selected: false,
+    draggable: false,
     isConnectable: true,
     positionAbsoluteX: 0,
     positionAbsoluteY: 0,

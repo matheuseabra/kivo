@@ -65,8 +65,9 @@ describe("localStorage utilities", () => {
         "wf_123": {
           workflowId: "wf_123",
           name: "Test Workflow",
-          path: "/path/to/workflow",
-          lastSaved: Date.now(),
+          directoryPath: "/path/to/workflow",
+          generationsPath: null,
+          lastSavedAt: Date.now(),
         },
       };
       localStorageMock.setItem(STORAGE_KEY, JSON.stringify(mockConfigs));
@@ -81,8 +82,9 @@ describe("localStorage utilities", () => {
       const config = {
         workflowId: "wf_456",
         name: "New Workflow",
-        path: "/path/to/new",
-        lastSaved: Date.now(),
+        directoryPath: "/path/to/new",
+        generationsPath: null,
+        lastSavedAt: Date.now(),
       };
 
       saveSaveConfig(config);
@@ -95,8 +97,9 @@ describe("localStorage utilities", () => {
       const existingConfig = {
         workflowId: "wf_existing",
         name: "Existing",
-        path: "/existing",
-        lastSaved: Date.now(),
+        directoryPath: "/existing",
+        generationsPath: null,
+        lastSavedAt: Date.now(),
       };
       localStorageMock.setItem(
         STORAGE_KEY,
@@ -106,8 +109,9 @@ describe("localStorage utilities", () => {
       const newConfig = {
         workflowId: "wf_new",
         name: "New",
-        path: "/new",
-        lastSaved: Date.now(),
+        directoryPath: "/new",
+        generationsPath: null,
+        lastSavedAt: Date.now(),
       };
       saveSaveConfig(newConfig);
 
@@ -126,7 +130,7 @@ describe("localStorage utilities", () => {
     it("returns null when workflow not found", () => {
       localStorageMock.setItem(
         COST_DATA_STORAGE_KEY,
-        JSON.stringify({ "wf_other": { workflowId: "wf_other", totalCost: 10 } })
+        JSON.stringify({ "wf_other": { workflowId: "wf_other", incurredCost: 10, lastUpdated: Date.now() } })
       );
 
       const result = loadWorkflowCostData("wf_missing");
@@ -134,7 +138,7 @@ describe("localStorage utilities", () => {
     });
 
     it("returns cost data when found", () => {
-      const costData = { workflowId: "wf_123", totalCost: 5.5 };
+      const costData = { workflowId: "wf_123", incurredCost: 5.5, lastUpdated: Date.now() };
       localStorageMock.setItem(
         COST_DATA_STORAGE_KEY,
         JSON.stringify({ "wf_123": costData })
@@ -154,7 +158,7 @@ describe("localStorage utilities", () => {
 
   describe("saveWorkflowCostData", () => {
     it("stores cost data", () => {
-      const costData = { workflowId: "wf_789", totalCost: 2.5 };
+      const costData = { workflowId: "wf_789", incurredCost: 2.5, lastUpdated: Date.now() };
 
       saveWorkflowCostData(costData);
 
@@ -327,7 +331,7 @@ describe("localStorage utilities", () => {
     it("stores config to localStorage", () => {
       const config = {
         generateVideo: {
-          selectedModel: { provider: "replicate", modelId: "video-model", displayName: "Video Model" },
+          selectedModel: { provider: "replicate" as const, modelId: "video-model", displayName: "Video Model" },
         },
       };
 
