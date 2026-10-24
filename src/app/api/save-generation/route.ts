@@ -4,6 +4,7 @@ import * as path from "path";
 import * as crypto from "crypto";
 import { logger } from "@/utils/logger";
 import { isVercelEnvironment, unsupportedOnVercelResponse } from "@/utils/vercelEnvironment";
+import { safeFetchMedia } from "@/lib/server/safeMediaFetch";
 
 export const maxDuration = 300; // 5 minute timeout for large media operations
 
@@ -54,9 +55,13 @@ function getExtensionFromMime(mimeType: string): string {
   return "bin";
 }
 
-// Helper to detect if a string is an HTTP URL
-function isHttpUrl(str: string): boolean {
-  return str.startsWith("http://") || str.startsWith("https://");
+// Identify URL-like media input so unsupported protocols fail validation instead of becoming base64 bytes.
+function isRemoteUrl(str: string): boolean {
+  try {
+    return new URL(str).protocol !== "data:";
+  } catch {
+    return false;
+  }
 }
 
 // Known file extensions for 3D models and common media
@@ -186,63 +191,25 @@ export async function POST(request: NextRequest) {
     let buffer: Buffer;
     let extension: string;
 
-    if (isHttpUrl(content)) {
+    if (isRemoteUrl(content)) {
       // Handle HTTP URL (common for large video files from providers)
-      logger.info('file.save', 'Fetching content from URL', { url: content.substring(0, 100) });
+      logger.info('file.save', 'Fetching content from URL', { hasRemoteMedia: true });
 
       // Set up timeout to prevent hanging requests (60 seconds for large video files)
       const FETCH_TIMEOUT_MS = 60000;
-      const MAX_CONTENT_SIZE = 500 * 1024 * 1024; // 500MB max
+      const MAX_CONTENT_SIZE = 100 * 1024 * 1024; // 100 MiB, aligned with generation storage limit
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+      const mediaKind = isModel ? "model" : isAudio ? "audio" : isVideo ? "video" : "image";
+      const downloaded = await safeFetchMedia(content, {
+        kind: mediaKind,
+        maxBytes: MAX_CONTENT_SIZE,
+        timeoutMs: FETCH_TIMEOUT_MS,
+      });
+      buffer = downloaded.buffer;
 
-      try {
-        const response = await fetch(content, { signal: controller.signal });
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          throw new Error(`Failed to fetch content: ${response.status} ${response.statusText}`);
-        }
-
-        // Check content-length before downloading to avoid excessive bandwidth usage
-        const contentLength = response.headers.get("content-length");
-        if (contentLength) {
-          const size = parseInt(contentLength, 10);
-          if (size > MAX_CONTENT_SIZE) {
-            throw new Error(`Content size ${size} bytes exceeds maximum allowed ${MAX_CONTENT_SIZE} bytes`);
-          }
-        }
-
-        const rawSaveContentType = response.headers.get("content-type");
-
-        // For 3D models, try extracting extension from URL first (most reliable with CDN URLs)
-        const urlExtension = isModel ? getExtensionFromUrl(content) : null;
-
-        if (urlExtension) {
-          extension = urlExtension;
-        } else {
-          const contentType = (rawSaveContentType && (rawSaveContentType.startsWith("video/") || rawSaveContentType.startsWith("image/") || rawSaveContentType.startsWith("model/") || rawSaveContentType.startsWith("audio/")))
-            ? rawSaveContentType
-            : (isModel ? "model/gltf-binary" : isAudio ? "audio/mpeg" : isVideo ? "video/mp4" : "image/png");
-          extension = getExtensionFromMime(contentType);
-        }
-
-        const arrayBuffer = await response.arrayBuffer();
-
-        // Double-check actual size after download
-        if (arrayBuffer.byteLength > MAX_CONTENT_SIZE) {
-          throw new Error(`Downloaded content size ${arrayBuffer.byteLength} bytes exceeds maximum allowed ${MAX_CONTENT_SIZE} bytes`);
-        }
-
-        buffer = Buffer.from(arrayBuffer);
-      } catch (fetchError) {
-        clearTimeout(timeoutId);
-        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-          throw new Error(`Fetch timed out after ${FETCH_TIMEOUT_MS}ms`);
-        }
-        throw fetchError;
-      }
+      // For 3D models, URL extensions are the most reliable CDN hint.
+      const urlExtension = isModel ? getExtensionFromUrl(content) : null;
+      extension = urlExtension || getExtensionFromMime(downloaded.contentType);
     } else {
       // Handle base64 data URL
       const dataUrlMatch = content.match(/^data:([\w/+-]+);base64,/);
@@ -260,7 +227,7 @@ export async function POST(request: NextRequest) {
 
     // Safety net: if extension resolved to "bin" but we know the media type, use correct extension
     if (extension === "bin") {
-      if (isModel && isHttpUrl(content)) {
+      if (isModel && isRemoteUrl(content)) {
         extension = getExtensionFromUrl(content) || "glb";
       } else {
         extension = isModel ? "glb" : isAudio ? "mp3" : isVideo ? "mp4" : "png";

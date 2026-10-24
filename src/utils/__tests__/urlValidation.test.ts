@@ -1,73 +1,40 @@
-import { describe, it, expect } from "vitest";
-import { validateMediaUrl } from "../urlValidation";
+import { describe, expect, it } from "vitest";
+import { isPublicIpAddress, validateMediaUrl, validateResolvedMediaAddresses } from "../urlValidation";
 
 describe("validateMediaUrl", () => {
-  it("allows valid HTTPS URLs", () => {
+  it("allows public HTTP and HTTPS hostnames and addresses", () => {
     expect(validateMediaUrl("https://example.com/image.png")).toEqual({ valid: true });
-    expect(validateMediaUrl("https://cdn.kie.ai/output/abc.mp4")).toEqual({ valid: true });
+    expect(validateMediaUrl("http://93.184.216.34/image.png")).toEqual({ valid: true });
+    expect(validateMediaUrl("https://[2606:4700:4700::1111]/image.png")).toEqual({ valid: true });
   });
 
-  it("allows valid HTTP URLs", () => {
-    expect(validateMediaUrl("http://example.com/image.png")).toEqual({ valid: true });
+  it("rejects unsupported protocols and URL credentials", () => {
+    expect(validateMediaUrl("file:///etc/passwd").valid).toBe(false);
+    expect(validateMediaUrl("ftp://example.com/file").valid).toBe(false);
+    expect(validateMediaUrl("https://user:pass@example.com/file")).toEqual({ valid: false, error: "URL credentials are not allowed" });
   });
 
-  it("blocks non-http protocols", () => {
-    expect(validateMediaUrl("file:///etc/passwd")).toEqual({ valid: false, error: "Blocked protocol: file:" });
-    expect(validateMediaUrl("ftp://example.com/file")).toEqual({ valid: false, error: "Blocked protocol: ftp:" });
-    expect(validateMediaUrl("javascript:alert(1)")).toEqual({ valid: false, error: "Blocked protocol: javascript:" });
+  it("rejects loopback, private, link-local, shared, reserved and mapped addresses", () => {
+    const addresses = [
+      "0.0.0.0", "10.1.2.3", "100.64.0.1", "127.0.0.1", "169.254.169.254", "172.31.1.1",
+      "192.0.0.8", "192.0.2.1", "192.168.1.1", "198.18.0.1", "198.51.100.1", "203.0.113.1", "224.0.0.1", "240.0.0.1",
+      "::", "::1", "::ffff:127.0.0.1", "::ffff:7f00:1", "fc00::1", "fe80::1", "ff02::1",
+      "2001:db8::1", "2001:2::1", "2002::1", "3fff::1",
+    ];
+    for (const address of addresses) expect(isPublicIpAddress(address), address).toBe(false);
   });
 
-  it("blocks localhost", () => {
-    const result = validateMediaUrl("http://localhost:3000/api/secret");
-    expect(result.valid).toBe(false);
-    expect(result.error).toContain("Blocked host");
+  it("rejects a DNS answer set that contains any non-public address", () => {
+    expect(validateResolvedMediaAddresses([
+      { address: "93.184.216.34", family: 4 },
+      { address: "10.0.0.5", family: 4 },
+    ])).toEqual({ valid: false, error: "Blocked non-public IP: 10.0.0.5" });
+    expect(validateResolvedMediaAddresses([])).toEqual({ valid: false, error: "Host did not resolve" });
   });
 
-  it("blocks IPv6 loopback", () => {
-    const result = validateMediaUrl("http://[::1]:8080/");
-    expect(result.valid).toBe(false);
-    expect(result.error).toContain("Blocked host");
-  });
-
-  it("blocks 127.x.x.x loopback", () => {
-    const result = validateMediaUrl("http://127.0.0.1/api");
-    expect(result.valid).toBe(false);
-    expect(result.error).toContain("Blocked private IP");
-  });
-
-  it("blocks 10.x private IPs", () => {
-    const result = validateMediaUrl("http://10.0.0.1/internal");
-    expect(result.valid).toBe(false);
-    expect(result.error).toContain("Blocked private IP");
-  });
-
-  it("blocks 172.16-31.x private IPs", () => {
-    expect(validateMediaUrl("http://172.16.0.1/")).toEqual({ valid: false, error: "Blocked private IP: 172.16.0.1" });
-    expect(validateMediaUrl("http://172.31.255.1/")).toEqual({ valid: false, error: "Blocked private IP: 172.31.255.1" });
-    // 172.32.x should be allowed
-    expect(validateMediaUrl("http://172.32.0.1/")).toEqual({ valid: true });
-  });
-
-  it("blocks 192.168.x private IPs", () => {
-    const result = validateMediaUrl("http://192.168.1.1/admin");
-    expect(result.valid).toBe(false);
-    expect(result.error).toContain("Blocked private IP");
-  });
-
-  it("blocks 169.254.x link-local", () => {
-    const result = validateMediaUrl("http://169.254.169.254/latest/meta-data/");
-    expect(result.valid).toBe(false);
-    expect(result.error).toContain("Blocked private IP");
-  });
-
-  it("blocks 0.0.0.0", () => {
-    const result = validateMediaUrl("http://0.0.0.0/");
-    expect(result.valid).toBe(false);
-    expect(result.error).toContain("Blocked private IP");
-  });
-
-  it("rejects invalid URLs", () => {
+  it("rejects localhost names and malformed URLs", () => {
+    expect(validateMediaUrl("http://localhost:3000/secret").valid).toBe(false);
+    expect(validateMediaUrl("http://api.localhost./secret").valid).toBe(false);
     expect(validateMediaUrl("not-a-url")).toEqual({ valid: false, error: "Invalid URL" });
-    expect(validateMediaUrl("")).toEqual({ valid: false, error: "Invalid URL" });
   });
 });

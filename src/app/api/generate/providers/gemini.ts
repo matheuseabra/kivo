@@ -7,6 +7,7 @@
 import { NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { GenerateResponse, ModelType } from "@/types";
+import { safeFetchMedia } from "@/lib/server/safeMediaFetch";
 import { GenerationOutput } from "@/lib/providers/types";
 
 /**
@@ -324,21 +325,17 @@ export async function generateWithGeminiVideo(
   const videoUrl = `${videoUri}&key=${apiKey}`;
   console.log(`[API:${requestId}] Fetching video from URI...`);
 
-  const controller = new AbortController();
-  const fetchTimeout = setTimeout(() => controller.abort(), 60_000);
   try {
-    const videoResponse = await fetch(videoUrl, { signal: controller.signal });
-    if (!videoResponse.ok) {
-      console.error(`[API:${requestId}] Failed to fetch video: ${videoResponse.status}`);
-      return { success: false, error: `Failed to download generated video: ${videoResponse.status}` };
-    }
-
-    const videoBuffer = await videoResponse.arrayBuffer();
-    const videoSizeMB = (videoBuffer.byteLength / (1024 * 1024)).toFixed(2);
+    const downloaded = await safeFetchMedia(videoUrl, {
+      kind: "video",
+      maxBytes: 500 * 1024 * 1024,
+      timeoutMs: 60_000,
+    });
+    const videoSizeMB = (downloaded.buffer.byteLength / (1024 * 1024)).toFixed(2);
     console.log(`[API:${requestId}] Video downloaded: ${videoSizeMB}MB`);
 
-    const base64Video = Buffer.from(videoBuffer).toString("base64");
-    const dataUrl = `data:video/mp4;base64,${base64Video}`;
+    const base64Video = downloaded.buffer.toString("base64");
+    const dataUrl = `data:${downloaded.contentType};base64,${base64Video}`;
 
     console.log(`[API:${requestId}] SUCCESS - Returning ${videoSizeMB}MB video`);
 
@@ -349,7 +346,5 @@ export async function generateWithGeminiVideo(
   } catch (error) {
     console.error(`[API:${requestId}] Failed to download video: ${error}`);
     return { success: false, error: "Failed to download generated video" };
-  } finally {
-    clearTimeout(fetchTimeout);
   }
 }
